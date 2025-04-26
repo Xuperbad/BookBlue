@@ -122,22 +122,11 @@
       height: 100%;
     }
 
-    #dual-page-container {
-      display: flex;
+    #epub-container {
       width: 100%;
       height: 100%;
-    }
-
-    .page-container {
-      flex: 1;
-      height: 100%;
-      border-right: 1px solid #e0e0e0;
-      overflow: hidden;
       position: relative;
-    }
-
-    .page-container:last-child {
-      border-right: none;
+      overflow: hidden;
     }
 
     .drop-area {
@@ -268,10 +257,8 @@
 <body>
   <div class="container">
     <div class="reader-area">
-      <div id="dual-page-container">
-        <div id="left-page" class="page-container"></div>
-        <div id="right-page" class="page-container"></div>
-      </div>
+      <!-- 单一容器用于ePub.js渲染 -->
+      <div id="epub-container"></div>
 
       <!-- 加载指示器 -->
       <div id="loading-indicator" class="loading-indicator">Loading libraries</div>
@@ -338,14 +325,13 @@
 
       // 全局变量
       let book;
-      let leftRendition;  // 左侧页面渲染器
-      let rightRendition; // 右侧页面渲染器
+      let rendition;  // 渲染器
       let currentBook = null;
       let currentNotes = {};
       let currentLocation = 0; // 当前位置
       let totalLocations = 0;  // 总位置数
 
-      // 更新两个页面的显示 - 全局函数
+      // 更新页面显示 - 全局函数
       function updatePages(startLocation) {
         debug('Updating pages from location:', startLocation);
 
@@ -357,27 +343,30 @@
         currentLocation = startLocation;
 
         // 获取CFI位置
-        const leftCfi = book.locations.cfiFromLocation(startLocation);
-        let rightCfi = null;
+        const cfi = book.locations.cfiFromLocation(startLocation);
 
-        if (startLocation + 1 < totalLocations) {
-          rightCfi = book.locations.cfiFromLocation(startLocation + 1);
-        }
+        // 显示页面
+        rendition.display(cfi).then(() => {
+          debug('Page displayed at location:', startLocation);
 
-        // 显示左侧页面
-        leftRendition.display(leftCfi).then(() => {
-          debug('Left page displayed at location:', startLocation);
+          // 打印容器和内容尺寸
+          setTimeout(() => {
+            const iframe = document.querySelector('#epub-container iframe');
+            if (iframe) {
+              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+              const container = document.getElementById('epub-container');
+
+              console.log(`[页面显示] 容器尺寸: ${container.clientWidth}x${container.clientHeight}像素`);
+              console.log(`[iframe尺寸] iframe内容: ${iframeDoc.body.scrollWidth}x${iframeDoc.body.scrollHeight}像素`);
+
+              if (iframeDoc.body.scrollHeight > container.clientHeight) {
+                console.log(`[滚动警告] 页面存在垂直溢出: ${iframeDoc.body.scrollHeight - container.clientHeight}像素`);
+              }
+            }
+          }, 100);
+        }).catch(error => {
+          console.error('Error displaying page:', error);
         });
-
-        // 显示右侧页面（如果有）
-        if (rightCfi) {
-          rightRendition.display(rightCfi).then(() => {
-            debug('Right page displayed at location:', startLocation + 1);
-          });
-        } else {
-          // 如果没有右侧页面，显示空白
-          document.getElementById('right-page').innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#999;">End of Book</div>';
-        }
       }
 
       // 加载保存的笔记
@@ -590,31 +579,25 @@
 
                 // 移除了调试用的EPUB数据打印代码
 
-                // 创建双页渲染器
-                debug('Creating dual-page renditions...');
+                // 创建渲染器
+                debug('Creating rendition with spread view...');
 
                 // 清空容器，确保没有残留内容
-                document.getElementById('left-page').innerHTML = '';
-                document.getElementById('right-page').innerHTML = '';
+                document.getElementById('epub-container').innerHTML = '';
 
-                // 创建左侧页面渲染器
-                debug('Creating left page rendition...');
-                leftRendition = book.renderTo('left-page', {
-                  width: '100%',
-                  height: '100%',
-                  spread: 'none',
-                  flow: 'paginated',
-                  manager: 'default',
-                  allowScriptedContent: true,
-                  allowPopups: false,
-                });
+                // 获取容器尺寸
+                const container = document.getElementById('epub-container');
+                const containerWidth = container.clientWidth;
+                const containerHeight = container.clientHeight;
 
-                // 创建右侧页面渲染器
-                debug('Creating right page rendition...');
-                rightRendition = book.renderTo('right-page', {
-                  width: '100%',
-                  height: '100%',
-                  spread: 'none',
+                console.log(`[渲染] 容器尺寸: ${containerWidth}x${containerHeight}像素`);
+
+                // 创建渲染器，使用spread: 'both'启用双页显示
+                debug('Creating rendition with spread view...');
+                rendition = book.renderTo('epub-container', {
+                  width: containerWidth,
+                  height: containerHeight,
+                  spread: 'both',  // 启用双页显示
                   flow: 'paginated',
                   manager: 'default',
                   allowScriptedContent: true,
@@ -637,13 +620,8 @@
                 });
 
                 // 添加键盘事件处理
-                leftRendition.on('keydown', function(e) {
-                  debug('Left rendition keydown event:', e.key);
-                  handleKeyNavigation(e.key);
-                });
-
-                rightRendition.on('keydown', function(e) {
-                  debug('Right rendition keydown event:', e.key);
+                rendition.on('keydown', function(e) {
+                  debug('Rendition keydown event:', e.key);
                   handleKeyNavigation(e.key);
                 });
 
@@ -660,14 +638,14 @@
                 // 翻页函数
                 function navigatePrev() {
                   if (currentLocation > 0) {
-                    currentLocation -= 2;
+                    currentLocation -= 1;
                     updatePages(currentLocation);
                   }
                 }
 
                 function navigateNext() {
-                  if (currentLocation + 2 < totalLocations) {
-                    currentLocation += 2;
+                  if (currentLocation + 1 < totalLocations) {
+                    currentLocation += 1;
                     updatePages(currentLocation);
                   }
                 }
@@ -676,44 +654,42 @@
 
                 // 设置iframe的sandbox属性，允许脚本执行
                 setTimeout(function() {
-                  const leftIframe = document.querySelector('#left-page iframe');
-                  const rightIframe = document.querySelector('#right-page iframe');
+                  const iframe = document.querySelector('#epub-container iframe');
 
-                  if (leftIframe) {
-                    debug('Setting left iframe sandbox attribute to allow scripts');
-                    leftIframe.sandbox = 'allow-same-origin allow-scripts';
-                  }
-
-                  if (rightIframe) {
-                    debug('Setting right iframe sandbox attribute to allow scripts');
-                    rightIframe.sandbox = 'allow-same-origin allow-scripts';
+                  if (iframe) {
+                    debug('Setting iframe sandbox attribute to allow scripts');
+                    iframe.sandbox = 'allow-same-origin allow-scripts';
                   }
                 }, 100);
 
                 // 检查渲染器是否正确创建
-                if (!leftRendition || !rightRendition) {
-                  debug('Error: One or both renditions not created');
-                  throw new Error('Failed to create renditions');
+                if (!rendition) {
+                  debug('Error: Rendition not created');
+                  throw new Error('Failed to create rendition');
                 }
 
-                debug('Left rendition created successfully', leftRendition);
-                debug('Right rendition created successfully', rightRendition);
+                debug('Rendition created successfully', rendition);
 
-                // 添加左侧渲染器事件监听
-                leftRendition.on('rendered', function(section) {
-                  debug('Event: Left page rendered section', section.href);
+                // 添加渲染器事件监听
+                rendition.on('rendered', function(section) {
+                  debug('Event: Page rendered section', section.href);
 
                   // 检查iframe内容
                   setTimeout(function() {
-                    const iframe = document.querySelector('#left-page iframe');
+                    const iframe = document.querySelector('#epub-container iframe');
                     if (iframe) {
                       try {
                         const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        debug('Left iframe content after render:', {
+                        debug('Iframe content after render:', {
                           bodyLength: iframeDoc.body.innerHTML.length,
                           title: iframeDoc.title,
                           childNodes: iframeDoc.body.childNodes.length
                         });
+
+                        // 打印容器和内容尺寸
+                        const container = document.getElementById('epub-container');
+                        console.log(`[渲染事件] 容器尺寸: ${container.clientWidth}x${container.clientHeight}像素`);
+                        console.log(`[渲染事件] iframe内容: ${iframeDoc.body.scrollWidth}x${iframeDoc.body.scrollHeight}像素`);
 
                         // 移除点击翻页功能，只保留键盘和滚轮导航
                         if (iframeDoc) {
@@ -721,35 +697,7 @@
                           debug('Click navigation disabled as requested');
                         }
                       } catch (e) {
-                        debug('Error accessing left iframe content:', e);
-                      }
-                    }
-                  }, 100);
-                });
-
-                // 添加右侧渲染器事件监听
-                rightRendition.on('rendered', function(section) {
-                  debug('Event: Right page rendered section', section.href);
-
-                  // 检查iframe内容
-                  setTimeout(function() {
-                    const iframe = document.querySelector('#right-page iframe');
-                    if (iframe) {
-                      try {
-                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        debug('Right iframe content after render:', {
-                          bodyLength: iframeDoc.body.innerHTML.length,
-                          title: iframeDoc.title,
-                          childNodes: iframeDoc.body.childNodes.length
-                        });
-
-                        // 移除点击翻页功能，只保留键盘和滚轮导航
-                        if (iframeDoc) {
-                          // 不再添加点击事件处理器
-                          debug('Click navigation disabled as requested');
-                        }
-                      } catch (e) {
-                        debug('Error accessing right iframe content:', e);
+                        debug('Error accessing iframe content:', e);
                       }
                     }
                   }, 100);
@@ -798,7 +746,7 @@
           document.addEventListener('keydown', handleKeyPress);
 
           // 设置鼠标滚轮导航
-          document.getElementById('dual-page-container').addEventListener('wheel', handleMouseWheel);
+          document.getElementById('epub-container').addEventListener('wheel', handleMouseWheel);
           debug('Keyboard and wheel navigation enabled');
 
           // 移除了紧急导航按钮相关代码
@@ -813,7 +761,7 @@
 
       // 处理键盘导航
       function handleKeyPress(event) {
-        if (!book || !leftRendition || !rightRendition) return;
+        if (!book || !rendition) return;
 
         if (event.key === 'ArrowLeft') {
           event.preventDefault(); // 阻止默认行为
@@ -828,7 +776,7 @@
 
       // 处理鼠标滚轮导航 - 改进版
       function handleMouseWheel(event) {
-        if (!book || !leftRendition || !rightRendition) {
+        if (!book || !rendition) {
           debug('Cannot handle wheel: book or rendition not available');
           return;
         }
@@ -856,9 +804,9 @@
         }
       }
 
-      // 导航到上一页 - 双页版本
+      // 导航到上一页
       function navigatePrev() {
-        if (!book || !leftRendition || !rightRendition) {
+        if (!book || !rendition) {
           debug('Cannot navigate: book or rendition not available');
           return;
         }
@@ -866,24 +814,24 @@
         debug('Navigating to previous page...');
 
         if (currentLocation > 0) {
-          currentLocation -= 2;
+          currentLocation -= 1;
           updatePages(currentLocation);
         } else {
           debug('Already at the beginning of the book');
         }
       }
 
-      // 导航到下一页 - 双页版本
+      // 导航到下一页
       function navigateNext() {
-        if (!book || !leftRendition || !rightRendition) {
+        if (!book || !rendition) {
           debug('Cannot navigate: book or rendition not available');
           return;
         }
 
         debug('Navigating to next page...');
 
-        if (currentLocation + 2 < totalLocations) {
-          currentLocation += 2;
+        if (currentLocation + 1 < totalLocations) {
+          currentLocation += 1;
           updatePages(currentLocation);
         } else {
           debug('Already at the end of the book');
