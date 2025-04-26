@@ -11,31 +11,19 @@
   </script>
 
   <!-- 引入JSZip库 - ePub.js的依赖 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
-          onload="console.log('JSZip loaded from primary source');"
-          onerror="console.error('Failed to load JSZip from primary source');"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <!-- 引入ePub.js库 -->
-  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"
-          onload="console.log('ePub.js loaded from primary source');"
-          onerror="console.error('Failed to load ePub.js from primary source');"></script>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
 
   <!-- 库加载管理 -->
   <script>
     // 检查库是否已加载
     function checkLibraries() {
-      console.log('Checking libraries...');
-
       const jszipLoaded = typeof JSZip !== 'undefined';
       const epubLoaded = typeof ePub !== 'undefined';
 
-      console.log('JSZip loaded:', jszipLoaded);
-      console.log('ePub.js loaded:', epubLoaded);
-
       if (jszipLoaded && epubLoaded) {
-        console.log('All libraries loaded successfully!');
-        console.log('JSZip version:', JSZip.version || 'unknown');
-        console.log('ePub.js version:', ePub.VERSION || 'unknown');
 
         window.librariesReady = true;
         window.librariesLoading = false;
@@ -61,25 +49,19 @@
 
     // 尝试加载备用库源
     function loadAlternateLibraries() {
-      console.log('Loading libraries from alternate sources...');
-
       if (typeof JSZip === 'undefined') {
-        console.log('Loading JSZip from alternate source...');
         var jszipScript = document.createElement('script');
         jszipScript.src = 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js';
         jszipScript.onload = function() {
-          console.log('JSZip loaded from alternate source');
           checkLibraries();
         };
         document.head.appendChild(jszipScript);
       }
 
       if (typeof ePub === 'undefined') {
-        console.log('Loading ePub.js from alternate source...');
         var epubScript = document.createElement('script');
         epubScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.88/epub.min.js';
         epubScript.onload = function() {
-          console.log('ePub.js loaded from alternate source');
           checkLibraries();
         };
         document.head.appendChild(epubScript);
@@ -339,13 +321,9 @@
 
     document.addEventListener('DOMContentLoaded', function() {
       // 检查ePub.js是否正确加载
-      console.log('DOM Content Loaded');
       if (typeof ePub === 'undefined') {
-        console.error('ePub.js library is not loaded!');
         alert('Error: ePub.js library could not be loaded. Please check your internet connection and try again.');
         return;
-      } else {
-        console.log('ePub.js library is loaded successfully. Version:', ePub.VERSION || 'unknown');
       }
       // 获取DOM元素
       const dropArea = document.getElementById('drop-area');
@@ -479,8 +457,6 @@
 
       // 加载示例EPUB函数
       function loadSampleEpub() {
-        console.log('Loading sample EPUB...');
-
         // 使用一个公开可用的EPUB URL
         const sampleUrl = 'https://s3.amazonaws.com/moby-dick/moby-dick.epub';
 
@@ -498,7 +474,6 @@
           .then(blob => {
             // 创建File对象
             const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
-            console.log('Sample EPUB downloaded successfully');
             handleFile(file);
           })
           .catch(error => {
@@ -613,39 +588,7 @@
                 .then(function() {
                 debug('File opened successfully!');
 
-                // 打印解压后的EPUB数据
-                debug('Book object:', book);
-
-                // 打印spine数据（章节列表）
-                if (book.spine) {
-                  debug('Book spine items count: ' + book.spine.length);
-                  debug('Book spine items:', book.spine.items);
-
-                  // 打印第一个章节的内容
-                  if (book.spine.items && book.spine.items.length > 0) {
-                    const firstItem = book.spine.items[0];
-                    debug('First chapter href:', firstItem.href);
-
-                    // 尝试获取章节内容
-                    book.load(firstItem.href).then(function(content) {
-                      debug('First chapter content (sample):', content.substring(0, 500) + '...');
-                    }).catch(function(error) {
-                      debug('Error loading first chapter:', error);
-                    });
-                  }
-                } else {
-                  debug('Warning: Book spine is not available', book);
-                }
-
-                // 打印目录数据
-                if (book.navigation) {
-                  debug('Book navigation:', book.navigation);
-                }
-
-                // 打印元数据
-                if (book.metadata) {
-                  debug('Book metadata:', book.metadata);
-                }
+                // 移除了调试用的EPUB数据打印代码
 
                 // 创建双页渲染器
                 debug('Creating dual-page renditions...');
@@ -812,67 +755,13 @@
                   }, 100);
                 });
 
-                // 添加位置变化事件监听
-                leftRendition.on('relocated', function(location) {
-                  debug('Event: Left page relocated to', location);
-                });
-
-                rightRendition.on('relocated', function(location) {
-                  debug('Event: Right page relocated to', location);
-                });
-
-                // 添加更多事件监听
-                leftRendition.on('started', function() {
-                  debug('Event: Left rendition started');
-                });
-
-                rightRendition.on('started', function() {
-                  debug('Event: Right rendition started');
-                });
-
-                leftRendition.on('resized', function(size) {
-                  debug('Event: Left rendition resized', size);
-                });
-
-                rightRendition.on('resized', function(size) {
-                  debug('Event: Right rendition resized', size);
-                });
+                // 移除了调试用的事件监听器
 
                 // 不需要在这里显示书籍，因为我们会在生成位置信息后调用updatePages(0)
                 debug('Book setup complete, waiting for locations to be generated...');
               })
               .then(function() {
                 debug('Book displayed successfully!');
-
-                // 检查DOM中是否有内容
-                const leftIframe = document.querySelector('#left-page iframe');
-                const rightIframe = document.querySelector('#right-page iframe');
-
-                if (leftIframe) {
-                  debug('Found left iframe in DOM', leftIframe);
-                  const iframeDoc = leftIframe.contentDocument || leftIframe.contentWindow.document;
-                  if (iframeDoc) {
-                    debug('Left iframe document accessible');
-                    debug('Left iframe body content length: ' + iframeDoc.body.innerHTML.length);
-                  } else {
-                    debug('Warning: Cannot access left iframe document');
-                  }
-                } else {
-                  debug('Warning: No left iframe found in DOM');
-                }
-
-                if (rightIframe) {
-                  debug('Found right iframe in DOM', rightIframe);
-                  const iframeDoc = rightIframe.contentDocument || rightIframe.contentWindow.document;
-                  if (iframeDoc) {
-                    debug('Right iframe document accessible');
-                    debug('Right iframe body content length: ' + iframeDoc.body.innerHTML.length);
-                  } else {
-                    debug('Warning: Cannot access right iframe document');
-                  }
-                } else {
-                  debug('Warning: No right iframe found in DOM');
-                }
 
                 // 加载元数据
                 return book.loaded.metadata;
@@ -901,10 +790,8 @@
           // 加载笔记
           if (currentNotes[currentBook]) {
             notesTextarea.value = currentNotes[currentBook];
-            console.log('Loaded notes for book');
           } else {
             notesTextarea.value = '';
-            console.log('No saved notes for this book');
           }
 
           // 设置键盘导航
@@ -1003,79 +890,7 @@
         }
       }
 
-      // 获取当前章节在spine中的索引
-      function getCurrentSpineIndex() {
-        try {
-          if (!book || !book.spine || !book.spine.items || !rendition || !rendition.location) {
-            return -1;
-          }
-
-          const currentHref = rendition.location.start.href;
-          for (let i = 0; i < book.spine.items.length; i++) {
-            if (book.spine.items[i].href === currentHref) {
-              return i;
-            }
-          }
-          return -1;
-        } catch (error) {
-          debug('Error getting current spine index:', error);
-          return -1;
-        }
-      }
-
-      // 尝试备用导航方法
-      function tryAlternativeNavigation(direction) {
-        debug('Trying alternative navigation:', direction);
-
-        try {
-          // 方法1: 使用spine导航
-          if (book.package && book.package.metadata && book.package.spine) {
-            debug('Using spine navigation');
-            const current = book.package.spine.find(item => item.href === rendition.location.start.href);
-            const index = book.package.spine.indexOf(current);
-
-            if (direction === 'next' && index < book.package.spine.length - 1) {
-              const next = book.package.spine[index + 1];
-              debug('Navigating to next spine item:', next.href);
-              rendition.display(next.href);
-              return true;
-            } else if (direction === 'prev' && index > 0) {
-              const prev = book.package.spine[index - 1];
-              debug('Navigating to previous spine item:', prev.href);
-              rendition.display(prev.href);
-              return true;
-            }
-          }
-
-          // 方法2: 使用CFI导航
-          if (rendition.location && rendition.location.start && rendition.location.start.cfi) {
-            debug('Using CFI navigation');
-            const cfi = rendition.location.start.cfi;
-
-            if (direction === 'next') {
-              const newCfi = book.locations.cfiFromPercentage(
-                Math.min(1, book.locations.percentageFromCfi(cfi) + 0.05)
-              );
-              debug('Navigating to next CFI:', newCfi);
-              rendition.display(newCfi);
-              return true;
-            } else if (direction === 'prev') {
-              const newCfi = book.locations.cfiFromPercentage(
-                Math.max(0, book.locations.percentageFromCfi(cfi) - 0.05)
-              );
-              debug('Navigating to previous CFI:', newCfi);
-              rendition.display(newCfi);
-              return true;
-            }
-          }
-
-          debug('No alternative navigation method available');
-          return false;
-        } catch (error) {
-          debug('Error in alternative navigation:', error);
-          return false;
-        }
-      }
+      // 移除了未使用的导航辅助函数
 
       // 移除了调试按钮事件处理
     });
