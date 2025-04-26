@@ -339,9 +339,22 @@
         // 获取CFI位置
         const cfi = book.locations.cfiFromLocation(startLocation);
 
+        console.log(`[导航] 跳转到位置 ${startLocation}，CFI: ${cfi}`);
+
         // 显示页面
         rendition.display(cfi).then(() => {
           debug('Page displayed at location:', startLocation);
+
+          // 获取当前位置信息
+          rendition.currentLocation().then(location => {
+            console.log(`[当前位置] 开始: ${location.start.cfi}`);
+            console.log(`[当前位置] 结束: ${location.end.cfi}`);
+            console.log(`[当前位置] 百分比: ${location.start.percentage * 100}%`);
+            console.log(`[当前位置] 章节: ${location.start.href}`);
+
+            // 存储当前位置的详细信息，用于更精确的导航
+            window.currentLocationInfo = location;
+          });
 
           // 打印容器和内容尺寸
           setTimeout(() => {
@@ -625,6 +638,26 @@
                   }, 100);
                 });
 
+                // 添加位置变化事件监听
+                rendition.on('relocated', function(location) {
+                  console.log(`[位置变化] 当前页: ${location.start.displayed.page}`);
+                  console.log(`[位置变化] 总页数: ${location.start.displayed.total}`);
+                  console.log(`[位置变化] 百分比: ${(location.start.percentage * 100).toFixed(2)}%`);
+                  console.log(`[位置变化] 章节: ${location.start.href}`);
+
+                  // 尝试从当前位置获取位置索引
+                  try {
+                    const locationCfi = location.start.cfi;
+                    const newLocation = book.locations.locationFromCfi(locationCfi);
+                    if (newLocation !== currentLocation) {
+                      currentLocation = newLocation;
+                      console.log(`[位置变化] 更新位置索引: ${currentLocation}`);
+                    }
+                  } catch (e) {
+                    console.log(`[位置变化] 无法获取位置索引: ${e.message}`);
+                  }
+                });
+
                 // 移除了调试用的事件监听器
 
                 // 不需要在这里显示书籍，因为我们会在生成位置信息后调用updatePages(0)
@@ -730,7 +763,7 @@
         }
       }
 
-      // 导航到上一页
+      // 导航到上一页 - 使用ePub.js内置方法
       function navigatePrev() {
         if (!book || !rendition) {
           debug('Cannot navigate: book or rendition not available');
@@ -739,15 +772,27 @@
 
         debug('Navigating to previous page...');
 
-        if (currentLocation > 0) {
-          currentLocation -= 1;
-          updatePages(currentLocation);
-        } else {
+        // 使用rendition的prev方法导航到上一页
+        rendition.prev().then(function() {
+          // 导航成功后更新当前位置
+          rendition.currentLocation().then(location => {
+            // 尝试从当前位置获取位置索引
+            try {
+              const locationCfi = location.start.cfi;
+              const newLocation = book.locations.locationFromCfi(locationCfi);
+              currentLocation = newLocation;
+              console.log(`[导航] 上一页成功，当前位置: ${currentLocation}`);
+            } catch (e) {
+              console.log(`[导航] 上一页成功，但无法获取位置索引: ${e.message}`);
+            }
+          });
+        }).catch(function(err) {
+          console.log(`[导航] 已经是第一页: ${err}`);
           debug('Already at the beginning of the book');
-        }
+        });
       }
 
-      // 导航到下一页
+      // 导航到下一页 - 使用ePub.js内置方法
       function navigateNext() {
         if (!book || !rendition) {
           debug('Cannot navigate: book or rendition not available');
@@ -756,12 +801,24 @@
 
         debug('Navigating to next page...');
 
-        if (currentLocation + 1 < totalLocations) {
-          currentLocation += 1;
-          updatePages(currentLocation);
-        } else {
+        // 使用rendition的next方法导航到下一页
+        rendition.next().then(function() {
+          // 导航成功后更新当前位置
+          rendition.currentLocation().then(location => {
+            // 尝试从当前位置获取位置索引
+            try {
+              const locationCfi = location.start.cfi;
+              const newLocation = book.locations.locationFromCfi(locationCfi);
+              currentLocation = newLocation;
+              console.log(`[导航] 下一页成功，当前位置: ${currentLocation}`);
+            } catch (e) {
+              console.log(`[导航] 下一页成功，但无法获取位置索引: ${e.message}`);
+            }
+          });
+        }).catch(function(err) {
+          console.log(`[导航] 已经是最后一页: ${err}`);
           debug('Already at the end of the book');
-        }
+        });
       }
 
       // 处理窗口大小调整
