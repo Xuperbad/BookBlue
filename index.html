@@ -37,8 +37,10 @@
         const dropArea = document.getElementById('drop-area');
         if (dropArea) {
           dropArea.classList.remove('disabled');
-          dropArea.querySelector('h2').textContent = 'Upload EPUB File';
-          dropArea.querySelector('p').textContent = 'Drag and drop your EPUB file here, or click to select a file';
+          const loadingText = dropArea.querySelector('.loading-text');
+          if (loadingText) {
+            loadingText.style.display = 'none';
+          }
         }
 
         return true;
@@ -114,12 +116,10 @@
 
     .notes-area {
       width: 350px;
-      padding: 1.5rem;
       background-color: #f5f2e9;
       border-left: 1px solid #e0e0e0;
-      display: flex;
-      flex-direction: column;
       height: 100%;
+      position: relative;
     }
 
     #epub-container {
@@ -180,14 +180,38 @@
       60%, 100% { content: "..."; }
     }
 
-    .drop-area h2 {
-      margin-bottom: 1rem;
+    .loading-text {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       color: #4a4238;
+      font-size: 1.2rem;
+      z-index: 2;
     }
 
-    .drop-area p {
-      margin-bottom: 1.5rem;
-      color: #666;
+    .plus-container {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #4a4238;
+      color: white;
+      margin: 0 auto;
+      transition: transform 0.2s, background-color 0.2s;
+    }
+
+    .plus-icon {
+      font-size: 3rem;
+      line-height: 1;
+      display: block;
+    }
+
+    .drop-area:not(.disabled):hover .plus-container {
+      background-color: #5d5347;
+      transform: scale(1.1);
     }
 
     #file-input {
@@ -208,36 +232,17 @@
       background-color: #5d5347;
     }
 
-    .notes-area h2 {
-      margin-bottom: 1rem;
-      color: #4a4238;
-      border-bottom: 1px solid #e0e0e0;
-      padding-bottom: 0.5rem;
-    }
-
     #notes {
-      flex: 1;
-      padding: 1rem;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
+      width: 100%;
+      height: 100%;
+      padding: 1.5rem;
       resize: none;
       font-family: inherit;
-      background-color: #fff;
+      background-color: transparent;
       line-height: 1.6;
-    }
-
-    #save-notes {
-      margin-top: 1rem;
-      padding: 0.7rem 1.2rem;
-      background-color: #4a4238;
-      color: white;
       border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    #save-notes:hover {
-      background-color: #5d5347;
+      outline: none;
+      color: #4a4238;
     }
 
     /* 极简界面，移除了页面信息样式 */
@@ -266,23 +271,16 @@
       <!-- 移除了紧急翻页按钮 -->
 
       <div id="drop-area" class="drop-area disabled">
-        <h2>Loading Libraries...</h2>
-        <p>Please wait while we load the necessary libraries</p>
-        <input type="file" id="file-input" accept=".epub">
-        <button id="select-file-btn" style="margin-bottom: 15px;" disabled>Select File</button>
-        <div style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
-          <p style="margin-bottom: 10px; font-size: 0.9rem;">Or try with a sample EPUB:</p>
-          <button id="load-sample-btn" style="background-color: #5d5347;" disabled>Load Sample EPUB</button>
+        <div class="loading-text">Loading...</div>
+        <div class="plus-container">
+          <span class="plus-icon">+</span>
         </div>
-
       </div>
       <!-- 极简界面，移除了导航条 -->
     </div>
 
     <div class="notes-area">
-      <h2>Notes</h2>
-      <textarea id="notes" placeholder="Write your notes here..."></textarea>
-      <button id="save-notes">Save Notes</button>
+      <textarea id="notes" placeholder="Click here to write your notes..."></textarea>
     </div>
   </div>
 
@@ -314,12 +312,8 @@
       }
       // 获取DOM元素
       const dropArea = document.getElementById('drop-area');
-      const fileInput = document.getElementById('file-input');
-      const selectFileBtn = document.getElementById('select-file-btn');
-      const loadSampleBtn = document.getElementById('load-sample-btn');
       const epubViewer = document.getElementById('epub-viewer');
       const notesTextarea = document.getElementById('notes');
-      const saveNotesBtn = document.getElementById('save-notes');
       // 移除了调试按钮相关变量
       // 移除了紧急导航按钮相关变量
 
@@ -379,24 +373,6 @@
         console.error('Error loading saved notes:', error);
       }
 
-      // 处理文件选择按钮点击
-      selectFileBtn.addEventListener('click', function() {
-        if (window.librariesReady) {
-          fileInput.click();
-        } else {
-          alert('Libraries are still loading. Please wait a moment and try again.');
-          debug('Error: Libraries not ready yet');
-        }
-      });
-
-      // 处理文件选择
-      fileInput.addEventListener('change', function(event) {
-        const file = event.target.files[0];
-        if (file) {
-          handleFile(file);
-        }
-      });
-
       // 处理拖放事件
       dropArea.addEventListener('dragover', function(event) {
         if (!window.librariesReady) {
@@ -434,67 +410,13 @@
         }
       });
 
-      // 处理加载示例EPUB
-      loadSampleBtn.addEventListener('click', function() {
-        if (window.librariesReady) {
-          loadSampleEpub();
-        } else {
-          alert('Libraries are still loading. Please wait a moment and try again.');
-          debug('Error: Libraries not ready yet');
-        }
-      });
+      // 移除了示例EPUB加载功能
 
-      // 加载示例EPUB函数
-      function loadSampleEpub() {
-        // 使用一个公开可用的EPUB URL
-        const sampleUrl = 'https://s3.amazonaws.com/moby-dick/moby-dick.epub';
-
-        // 显示加载中消息
-        dropArea.innerHTML = '<h2>Loading sample EPUB...</h2><p>Please wait...</p>';
-
-        // 使用fetch获取示例EPUB
-        fetch(sampleUrl)
-          .then(response => {
-            if (!response.ok) {
-              throw new Error('Network response was not ok');
-            }
-            return response.blob();
-          })
-          .then(blob => {
-            // 创建File对象
-            const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
-            handleFile(file);
-          })
-          .catch(error => {
-            console.error('Error loading sample EPUB:', error);
-            dropArea.innerHTML = `
-              <h2>Error Loading Sample</h2>
-              <p>There was an error loading the sample EPUB: ${error.message}</p>
-              <button id="select-file-btn" style="margin-bottom: 15px;">Select File</button>
-              <div style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
-                <p style="margin-bottom: 10px; font-size: 0.9rem;">Or try with a sample EPUB:</p>
-                <button id="load-sample-btn" style="background-color: #5d5347;">Load Sample EPUB</button>
-              </div>
-            `;
-
-            // 重新添加事件监听器
-            document.getElementById('select-file-btn').addEventListener('click', function() {
-              fileInput.click();
-            });
-            document.getElementById('load-sample-btn').addEventListener('click', function() {
-              loadSampleEpub();
-            });
-          });
-      }
-
-      // 处理保存笔记
-      saveNotesBtn.addEventListener('click', function() {
+      // 设置自动保存笔记
+      notesTextarea.addEventListener('input', function() {
         if (currentBook) {
           currentNotes[currentBook] = notesTextarea.value;
           localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
-          alert('Notes saved successfully!');
-        } else {
-          alert('Please open a book first.');
         }
       });
 
