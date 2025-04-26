@@ -747,7 +747,11 @@
 
           // 设置鼠标滚轮导航
           document.getElementById('epub-container').addEventListener('wheel', handleMouseWheel);
-          debug('Keyboard and wheel navigation enabled');
+
+          // 添加窗口大小调整事件监听器
+          window.addEventListener('resize', handleResize);
+
+          debug('Keyboard, wheel navigation and resize handling enabled');
 
           // 移除了紧急导航按钮相关代码
 
@@ -836,6 +840,45 @@
         } else {
           debug('Already at the end of the book');
         }
+      }
+
+      // 处理窗口大小调整
+      function handleResize() {
+        if (!book || !rendition) {
+          debug('Cannot handle resize: book or rendition not available');
+          return;
+        }
+
+        // 防抖动处理，避免频繁调整大小时多次渲染
+        clearTimeout(window.resizeTimer);
+        window.resizeTimer = setTimeout(function() {
+          debug('Window resized, adjusting rendition...');
+
+          // 获取新的容器尺寸
+          const container = document.getElementById('epub-container');
+          const newWidth = container.clientWidth;
+          const newHeight = container.clientHeight;
+
+          console.log(`[窗口调整] 新容器尺寸: ${newWidth}x${newHeight}像素`);
+
+          // 调整渲染器尺寸
+          rendition.resize(newWidth, newHeight);
+
+          // 重新渲染当前位置
+          const cfi = book.locations.cfiFromLocation(currentLocation);
+          rendition.display(cfi).then(() => {
+            console.log(`[窗口调整] 在位置 ${currentLocation} 重新渲染内容`);
+
+            // 打印容器和内容尺寸
+            setTimeout(() => {
+              const iframe = document.querySelector('#epub-container iframe');
+              if (iframe) {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                console.log(`[窗口调整后] iframe内容: ${iframeDoc.body.scrollWidth}x${iframeDoc.body.scrollHeight}像素`);
+              }
+            }, 100);
+          });
+        }, 250); // 250ms的防抖动延迟
       }
 
       // 移除了未使用的导航辅助函数
