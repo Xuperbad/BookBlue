@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple EPUB Reader</title>
+  <!-- 添加全局变量来跟踪库加载状态 -->
+  <script>
+    window.librariesReady = false;
+    window.librariesLoading = true;
+  </script>
+
+  <!-- 引入JSZip库 - ePub.js的依赖 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+          onload="console.log('JSZip loaded from primary source');"
+          onerror="console.error('Failed to load JSZip from primary source');"></script>
+
+  <!-- 引入ePub.js库 -->
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"
+          onload="console.log('ePub.js loaded from primary source');"
+          onerror="console.error('Failed to load ePub.js from primary source');"></script>
+
+  <!-- 库加载管理 -->
+  <script>
+    // 检查库是否已加载
+    function checkLibraries() {
+      console.log('Checking libraries...');
+
+      const jszipLoaded = typeof JSZip !== 'undefined';
+      const epubLoaded = typeof ePub !== 'undefined';
+
+      console.log('JSZip loaded:', jszipLoaded);
+      console.log('ePub.js loaded:', epubLoaded);
+
+      if (jszipLoaded && epubLoaded) {
+        console.log('All libraries loaded successfully!');
+        console.log('JSZip version:', JSZip.version || 'unknown');
+        console.log('ePub.js version:', ePub.VERSION || 'unknown');
+
+        window.librariesReady = true;
+        window.librariesLoading = false;
+
+        // 更新UI状态
+        const loadingIndicator = document.getElementById('loading-indicator');
+        if (loadingIndicator) {
+          loadingIndicator.style.display = 'none';
+        }
+
+        const dropArea = document.getElementById('drop-area');
+        if (dropArea) {
+          dropArea.classList.remove('disabled');
+          dropArea.querySelector('h2').textContent = 'Upload EPUB File';
+          dropArea.querySelector('p').textContent = 'Drag and drop your EPUB file here, or click to select a file';
+        }
+
+        return true;
+      }
+
+      return false;
+    }
+
+    // 尝试加载备用库源
+    function loadAlternateLibraries() {
+      console.log('Loading libraries from alternate sources...');
+
+      if (typeof JSZip === 'undefined') {
+        console.log('Loading JSZip from alternate source...');
+        var jszipScript = document.createElement('script');
+        jszipScript.src = 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js';
+        jszipScript.onload = function() {
+          console.log('JSZip loaded from alternate source');
+          checkLibraries();
+        };
+        document.head.appendChild(jszipScript);
+      }
+
+      if (typeof ePub === 'undefined') {
+        console.log('Loading ePub.js from alternate source...');
+        var epubScript = document.createElement('script');
+        epubScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.88/epub.min.js';
+        epubScript.onload = function() {
+          console.log('ePub.js loaded from alternate source');
+          checkLibraries();
+        };
+        document.head.appendChild(epubScript);
+      }
+    }
+
+    // 页面加载完成后检查库
+    window.addEventListener('load', function() {
+      if (!checkLibraries()) {
+        loadAlternateLibraries();
+
+        // 5秒后再次检查
+        setTimeout(function() {
+          if (!window.librariesReady) {
+            console.error('Failed to load libraries after timeout');
+            alert('Failed to load required libraries. Please check your internet connection and try again.');
+          }
+        }, 5000);
+      }
+    });
+  </script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Noto Serif', Georgia, serif;
+      background-color: #f5f2e9;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;
+      width: 100%;
+    }
+
+    .reader-area {
+      flex: 1;
+      height: 100%;
+      position: relative;
+      background-color: #fff;
+      overflow: hidden;
+      cursor: default; /* 使用默认光标，不显示文本选择光标 */
+    }
+
+    .notes-area {
+      width: 350px;
+      padding: 1.5rem;
+      background-color: #f5f2e9;
+      border-left: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    #epub-viewer {
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-area {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(255, 255, 255, 0.9);
+      border: 3px dashed #ccc;
+      z-index: 10;
+      transition: all 0.3s ease;
+    }
+
+    .drop-area.hidden {
+      display: none;
+    }
+
+    .drop-area.disabled {
+      opacity: 0.7;
+      pointer-events: none;
+      border-color: #999;
+    }
+
+    .loading-indicator {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #4a4238;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 100;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .loading-indicator::after {
+      content: "...";
+      animation: dots 1.5s infinite;
+    }
+
+    @keyframes dots {
+      0%, 20% { content: "."; }
+      40% { content: ".."; }
+      60%, 100% { content: "..."; }
+    }
+
+    .drop-area h2 {
+      margin-bottom: 1rem;
+      color: #4a4238;
+    }
+
+    .drop-area p {
+      margin-bottom: 1.5rem;
+      color: #666;
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    #select-file-btn {
+      padding: 0.7rem 1.2rem;
+      background-color: #4a4238;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    #select-file-btn:hover {
+      background-color: #5d5347;
+    }
+
+    .notes-area h2 {
+      margin-bottom: 1rem;
+      color: #4a4238;
+      border-bottom: 1px solid #e0e0e0;
+      padding-bottom: 0.5rem;
+    }
+
+    #notes {
+      flex: 1;
+      padding: 1rem;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      resize: none;
+      font-family: inherit;
+      background-color: #fff;
+      line-height: 1.6;
+    }
+
+    #save-notes {
+      margin-top: 1rem;
+      padding: 0.7rem 1.2rem;
+      background-color: #4a4238;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    #save-notes:hover {
+      background-color: #5d5347;
+    }
+
+    /* 极简界面，移除了页面信息样式 */
+
+    @media (max-width: 768px) {
+      .container {
+        flex-direction: column;
+      }
+
+      .notes-area {
+        width: 100%;
+        height: 200px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="reader-area">
+      <div id="epub-viewer"></div>
+
+      <!-- 加载指示器 -->
+      <div id="loading-indicator" class="loading-indicator">Loading libraries</div>
+
+      <!-- 移除了紧急翻页按钮 -->
+
+      <div id="drop-area" class="drop-area disabled">
+        <h2>Loading Libraries...</h2>
+        <p>Please wait while we load the necessary libraries</p>
+        <input type="file" id="file-input" accept=".epub">
+        <button id="select-file-btn" style="margin-bottom: 15px;" disabled>Select File</button>
+        <div style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
+          <p style="margin-bottom: 10px; font-size: 0.9rem;">Or try with a sample EPUB:</p>
+          <button id="load-sample-btn" style="background-color: #5d5347;" disabled>Load Sample EPUB</button>
+        </div>
+        <div style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
+          <button id="debug-btn" style="background-color: #666; font-size: 0.8rem;">Debug Info</button>
+        </div>
+      </div>
+      <!-- 极简界面，移除了导航条 -->
+    </div>
+
+    <div class="notes-area">
+      <h2>Notes</h2>
+      <textarea id="notes" placeholder="Write your notes here..."></textarea>
+      <button id="save-notes">Save Notes</button>
+    </div>
+  </div>
+
+  <script>
+    // 全局错误处理
+    window.addEventListener('error', function(event) {
+      console.error('Global error caught:', event.error);
+      console.error('Error message:', event.message);
+      console.error('Error source:', event.filename);
+      console.error('Error line:', event.lineno);
+      console.error('Error column:', event.colno);
+    });
+
+    // 调试函数
+    function debug(message, obj) {
+      const timestamp = new Date().toISOString().substr(11, 8);
+      console.log(`[${timestamp}] ${message}`);
+      if (obj !== undefined) {
+        console.log(obj);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      // 检查ePub.js是否正确加载
+      console.log('DOM Content Loaded');
+      if (typeof ePub === 'undefined') {
+        console.error('ePub.js library is not loaded!');
+        alert('Error: ePub.js library could not be loaded. Please check your internet connection and try again.');
+        return;
+      } else {
+        console.log('ePub.js library is loaded successfully. Version:', ePub.VERSION || 'unknown');
+      }
+      // 获取DOM元素
+      const dropArea = document.getElementById('drop-area');
+      const fileInput = document.getElementById('file-input');
+      const selectFileBtn = document.getElementById('select-file-btn');
+      const loadSampleBtn = document.getElementById('load-sample-btn');
+      const epubViewer = document.getElementById('epub-viewer');
+      const notesTextarea = document.getElementById('notes');
+      const saveNotesBtn = document.getElementById('save-notes');
+      const debugBtn = document.getElementById('debug-btn');
+      // 移除了紧急导航按钮相关变量
+
+      // 全局变量
+      let book;
+      let rendition;
+      let currentBook = null;
+      let currentNotes = {};
+
+      // 加载保存的笔记
+      try {
+        const savedNotes = localStorage.getItem('epub-reader-notes');
+        if (savedNotes) {
+          currentNotes = JSON.parse(savedNotes);
+        }
+      } catch (error) {
+        console.error('Error loading saved notes:', error);
+      }
+
+      // 处理文件选择按钮点击
+      selectFileBtn.addEventListener('click', function() {
+        if (window.librariesReady) {
+          fileInput.click();
+        } else {
+          alert('Libraries are still loading. Please wait a moment and try again.');
+          debug('Error: Libraries not ready yet');
+        }
+      });
+
+      // 处理文件选择
+      fileInput.addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (file) {
+          handleFile(file);
+        }
+      });
+
+      // 处理拖放事件
+      dropArea.addEventListener('dragover', function(event) {
+        if (!window.librariesReady) {
+          event.preventDefault();
+          return;
+        }
+
+        event.preventDefault();
+        dropArea.style.borderColor = '#4a4238';
+        dropArea.style.backgroundColor = 'rgba(74, 66, 56, 0.1)';
+      });
+
+      dropArea.addEventListener('dragleave', function() {
+        if (!window.librariesReady) return;
+
+        dropArea.style.borderColor = '#ccc';
+        dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+      });
+
+      dropArea.addEventListener('drop', function(event) {
+        event.preventDefault();
+
+        if (!window.librariesReady) {
+          alert('Libraries are still loading. Please wait a moment and try again.');
+          debug('Error: Libraries not ready yet');
+          return;
+        }
+
+        dropArea.style.borderColor = '#ccc';
+        dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+
+        const file = event.dataTransfer.files[0];
+        if (file) {
+          handleFile(file);
+        }
+      });
+
+      // 处理加载示例EPUB
+      loadSampleBtn.addEventListener('click', function() {
+        if (window.librariesReady) {
+          loadSampleEpub();
+        } else {
+          alert('Libraries are still loading. Please wait a moment and try again.');
+          debug('Error: Libraries not ready yet');
+        }
+      });
+
+      // 加载示例EPUB函数
+      function loadSampleEpub() {
+        console.log('Loading sample EPUB...');
+
+        // 使用一个公开可用的EPUB URL
+        const sampleUrl = 'https://s3.amazonaws.com/moby-dick/moby-dick.epub';
+
+        // 显示加载中消息
+        dropArea.innerHTML = '<h2>Loading sample EPUB...</h2><p>Please wait...</p>';
+
+        // 使用fetch获取示例EPUB
+        fetch(sampleUrl)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('Network response was not ok');
+            }
+            return response.blob();
+          })
+          .then(blob => {
+            // 创建File对象
+            const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
+            console.log('Sample EPUB downloaded successfully');
+            handleFile(file);
+          })
+          .catch(error => {
+            console.error('Error loading sample EPUB:', error);
+            dropArea.innerHTML = `
+              <h2>Error Loading Sample</h2>
+              <p>There was an error loading the sample EPUB: ${error.message}</p>
+              <button id="select-file-btn" style="margin-bottom: 15px;">Select File</button>
+              <div style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
+                <p style="margin-bottom: 10px; font-size: 0.9rem;">Or try with a sample EPUB:</p>
+                <button id="load-sample-btn" style="background-color: #5d5347;">Load Sample EPUB</button>
+              </div>
+            `;
+
+            // 重新添加事件监听器
+            document.getElementById('select-file-btn').addEventListener('click', function() {
+              fileInput.click();
+            });
+            document.getElementById('load-sample-btn').addEventListener('click', function() {
+              loadSampleEpub();
+            });
+          });
+      }
+
+      // 处理保存笔记
+      saveNotesBtn.addEventListener('click', function() {
+        if (currentBook) {
+          currentNotes[currentBook] = notesTextarea.value;
+          localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
+          alert('Notes saved successfully!');
+        } else {
+          alert('Please open a book first.');
+        }
+      });
+
+      // 处理文件
+      function handleFile(file) {
+        debug('File received', file);
+        debug('File name: ' + file.name);
+        debug('File size: ' + file.size + ' bytes');
+        debug('File type: ' + file.type);
+
+        // 检查库是否已加载
+        if (!window.librariesReady) {
+          alert('Libraries are still loading. Please wait a moment and try again.');
+          debug('Error: Libraries not ready yet');
+          return;
+        }
+
+        // 检查是否是EPUB文件
+        if (!file.name.toLowerCase().endsWith('.epub')) {
+          alert('Please upload an EPUB file.');
+          debug('Error: Not an EPUB file');
+          return;
+        }
+
+        // 设置当前书籍
+        currentBook = file.name;
+        debug('Current book set to: ' + currentBook);
+
+        // 隐藏拖放区域
+        dropArea.classList.add('hidden');
+        debug('Drop area hidden');
+
+        try {
+          // 检查JSZip是否已加载
+          if (typeof JSZip === 'undefined') {
+            debug('Error: JSZip library is not loaded');
+            throw new Error('JSZip library is not loaded. Cannot process EPUB file.');
+          }
+
+          // 检查ePub.js是否已加载
+          if (typeof ePub === 'undefined') {
+            debug('Error: ePub.js library is not loaded');
+            throw new Error('ePub.js library is not loaded. Cannot process EPUB file.');
+          }
+
+          // 创建ePub.js书籍对象
+          debug('Creating ePub.js book object...');
+          debug('Using ePub.js version: ' + (ePub.VERSION || 'unknown'));
+          debug('Using JSZip version: ' + (JSZip.version || 'unknown'));
+
+          try {
+            // 使用更明确的方式创建book对象
+            debug('Creating new ePub instance');
+            book = ePub();
+
+            // 添加事件监听器来跟踪加载过程
+            book.on('book:ready', function() {
+              debug('Event: Book is ready!');
+            });
+
+            book.on('rendition:display', function(location) {
+              debug('Event: Rendition displayed at location', location);
+            });
+
+            book.on('rendition:error', function(error) {
+              debug('Event: Rendition error', error);
+            });
+
+            // 使用FileReader读取文件为ArrayBuffer
+            debug('Reading file as ArrayBuffer...');
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+              const arrayBuffer = e.target.result;
+              debug('File read as ArrayBuffer, size: ' + arrayBuffer.byteLength + ' bytes');
+
+              // 使用ArrayBuffer打开文件
+              debug('Opening file with ArrayBuffer...');
+              book.open(arrayBuffer)
+                .then(function() {
+                debug('File opened successfully!');
+
+                // 打印解压后的EPUB数据
+                debug('Book object:', book);
+
+                // 打印spine数据（章节列表）
+                if (book.spine) {
+                  debug('Book spine items count: ' + book.spine.length);
+                  debug('Book spine items:', book.spine.items);
+
+                  // 打印第一个章节的内容
+                  if (book.spine.items && book.spine.items.length > 0) {
+                    const firstItem = book.spine.items[0];
+                    debug('First chapter href:', firstItem.href);
+
+                    // 尝试获取章节内容
+                    book.load(firstItem.href).then(function(content) {
+                      debug('First chapter content (sample):', content.substring(0, 500) + '...');
+                    }).catch(function(error) {
+                      debug('Error loading first chapter:', error);
+                    });
+                  }
+                } else {
+                  debug('Warning: Book spine is not available', book);
+                }
+
+                // 打印目录数据
+                if (book.navigation) {
+                  debug('Book navigation:', book.navigation);
+                }
+
+                // 打印元数据
+                if (book.metadata) {
+                  debug('Book metadata:', book.metadata);
+                }
+
+                // 创建渲染器
+                debug('Creating rendition...');
+                // 清空容器，确保没有残留内容
+                document.getElementById('epub-viewer').innerHTML = '';
+
+                // 使用简单的配置创建渲染器
+                rendition = book.renderTo('epub-viewer', {
+                  width: '100%',
+                  height: '100%',
+                  spread: 'none',
+                  flow: 'paginated', // 使用分页模式，实现横向翻页
+                  manager: 'default', // 使用默认管理器
+                  allowScriptedContent: true, // 允许脚本内容
+                  allowPopups: false, // 禁用弹窗
+                });
+
+                // 直接在渲染器上添加键盘事件处理
+                rendition.on('keydown', function(e) {
+                  debug('Rendition keydown event:', e.key);
+
+                  // 左右箭头键导航
+                  if(e.key == "ArrowLeft") {
+                    rendition.prev();
+                  }
+                  if(e.key == "ArrowRight") {
+                    rendition.next();
+                  }
+                });
+
+                // 设置iframe的sandbox属性，允许脚本执行
+                setTimeout(function() {
+                  const iframe = document.querySelector('#epub-viewer iframe');
+                  if (iframe) {
+                    debug('Setting iframe sandbox attribute to allow scripts');
+                    iframe.sandbox = 'allow-same-origin allow-scripts';
+                  }
+                }, 100);
+
+                // 检查渲染器是否正确创建
+                if (!rendition) {
+                  debug('Error: Rendition not created');
+                  throw new Error('Failed to create rendition');
+                }
+
+                debug('Rendition created successfully', rendition);
+
+                // 添加渲染器事件监听
+                rendition.on('rendered', function(section) {
+                  debug('Event: Rendered section', section.href);
+
+                  // 检查iframe内容
+                  setTimeout(function() {
+                    const iframe = document.querySelector('#epub-viewer iframe');
+                    if (iframe) {
+                      try {
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        debug('Iframe content after render:', {
+                          bodyLength: iframeDoc.body.innerHTML.length,
+                          title: iframeDoc.title,
+                          childNodes: iframeDoc.body.childNodes.length
+                        });
+
+                        // 添加点击事件处理
+                        if (iframeDoc) {
+                          iframeDoc.addEventListener('click', function(event) {
+                            const width = iframeDoc.documentElement.clientWidth;
+                            const x = event.clientX;
+
+                            // 点击左侧1/3区域向前翻页，右侧1/3区域向后翻页
+                            if (x < width / 3) {
+                              debug('Click on left side, navigating prev');
+                              rendition.prev();
+                            } else if (x > width * 2 / 3) {
+                              debug('Click on right side, navigating next');
+                              rendition.next();
+                            }
+                          });
+                        }
+                      } catch (e) {
+                        debug('Error accessing iframe content:', e);
+                      }
+                    }
+                  }, 100);
+                });
+
+                rendition.on('relocated', function(location) {
+                  debug('Event: Relocated to', location);
+                });
+
+                // 添加更多事件监听
+                rendition.on('started', function() {
+                  debug('Event: Rendition started');
+                });
+
+                rendition.on('resized', function(size) {
+                  debug('Event: Rendition resized', size);
+                });
+
+                rendition.on('keydown', function(event) {
+                  debug('Event: Keydown in rendition', event.key);
+                });
+
+                rendition.on('click', function(event) {
+                  debug('Event: Click in rendition', {
+                    clientX: event.clientX,
+                    clientY: event.clientY
+                  });
+                });
+
+                // 显示书籍
+                debug('Displaying book...');
+                return rendition.display();
+              })
+              .then(function() {
+                debug('Book displayed successfully!');
+
+                // 检查DOM中是否有内容
+                const iframe = document.querySelector('#epub-viewer iframe');
+                if (iframe) {
+                  debug('Found iframe in DOM', iframe);
+                  const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                  if (iframeDoc) {
+                    debug('Iframe document accessible');
+                    debug('Iframe body content length: ' + iframeDoc.body.innerHTML.length);
+                  } else {
+                    debug('Warning: Cannot access iframe document');
+                  }
+                } else {
+                  debug('Warning: No iframe found in DOM');
+                }
+
+                // 加载元数据
+                return book.loaded.metadata;
+              })
+              .then(function(metadata) {
+                debug('Book metadata loaded', metadata);
+              })
+              .catch(function(error) {
+                debug('Error in book loading chain', error);
+                alert('Error loading EPUB: ' + error.message);
+              });
+            };
+
+            reader.onerror = function(error) {
+              debug('Error reading file:', error);
+              alert('Error reading file: ' + error);
+            };
+
+            // 开始读取文件
+            reader.readAsArrayBuffer(file);
+          } catch (error) {
+            debug('Critical error in ePub initialization', error);
+            alert('Critical error initializing ePub reader: ' + error.message);
+          }
+
+          // 加载笔记
+          if (currentNotes[currentBook]) {
+            notesTextarea.value = currentNotes[currentBook];
+            console.log('Loaded notes for book');
+          } else {
+            notesTextarea.value = '';
+            console.log('No saved notes for this book');
+          }
+
+          // 设置键盘导航
+          document.addEventListener('keydown', handleKeyPress);
+
+          // 设置鼠标滚轮导航
+          epubViewer.addEventListener('wheel', handleMouseWheel);
+          debug('Keyboard and wheel navigation enabled');
+
+          // 移除了紧急导航按钮相关代码
+
+        } catch (error) {
+          console.error('Error in handleFile:', error);
+          alert('Error loading EPUB: ' + error.message);
+        }
+      }
+
+      // 极简界面，移除了导航按钮事件
+
+      // 处理键盘导航
+      function handleKeyPress(event) {
+        if (!book || !rendition) return;
+
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault(); // 阻止默认行为
+          debug('Global keydown: ArrowLeft');
+          rendition.prev();
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault(); // 阻止默认行为
+          debug('Global keydown: ArrowRight');
+          rendition.next();
+        }
+      }
+
+      // 处理鼠标滚轮导航 - 改进版
+      function handleMouseWheel(event) {
+        if (!book || !rendition) {
+          debug('Cannot handle wheel: book or rendition not available');
+          return;
+        }
+
+        // 防止事件冒泡和默认行为
+        event.preventDefault();
+        event.stopPropagation();
+
+        // 设置滚动阈值和冷却时间，防止过快翻页
+        const now = Date.now();
+        if (now - (window.lastWheelTime || 0) < 150) return; // 150ms冷却时间，更灵敏
+        window.lastWheelTime = now;
+
+        debug('Wheel event detected, deltaY: ' + event.deltaY);
+
+        // 降低滚动阈值，使导航更灵敏
+        if (event.deltaY > 10) {
+          // 向下滚动，前进到下一页
+          debug('Wheel down detected, navigating next');
+          rendition.next();
+        } else if (event.deltaY < -10) {
+          // 向上滚动，后退到上一页
+          debug('Wheel up detected, navigating prev');
+          rendition.prev();
+        }
+      }
+
+      // 导航到上一页 - 简化版本
+      function navigatePrev() {
+        if (!book || !rendition) {
+          debug('Cannot navigate: book or rendition not available');
+          return;
+        }
+
+        debug('Navigating to previous page...');
+
+        // 获取当前章节索引
+        let currentIndex = -1;
+        try {
+          if (book.spine && book.spine.items) {
+            for (let i = 0; i < book.spine.items.length; i++) {
+              if (rendition.location && rendition.location.start &&
+                  book.spine.items[i].href === rendition.location.start.href) {
+                currentIndex = i;
+                break;
+              }
+            }
+            debug('Current spine index:', currentIndex);
+          }
+        } catch (e) {
+          debug('Error getting current index:', e);
+        }
+
+        // 尝试直接使用prev方法
+        try {
+          debug('Trying direct prev() method');
+          rendition.prev();
+          return;
+        } catch (e) {
+          debug('Direct prev() failed:', e);
+        }
+
+        // 如果直接方法失败，尝试使用spine导航
+        try {
+          if (currentIndex > 0) {
+            debug('Using spine navigation to previous chapter');
+            const prevHref = book.spine.items[currentIndex - 1].href;
+            debug('Previous href:', prevHref);
+            rendition.display(prevHref);
+            return;
+          }
+        } catch (e) {
+          debug('Spine navigation failed:', e);
+        }
+
+        // 最后尝试使用display方法
+        try {
+          debug('Using display method with prev option');
+          rendition.display('prev');
+        } catch (e) {
+          debug('Display prev failed:', e);
+          alert('无法导航到上一页');
+        }
+      }
+
+      // 导航到下一页 - 简化版本
+      function navigateNext() {
+        if (!book || !rendition) {
+          debug('Cannot navigate: book or rendition not available');
+          return;
+        }
+
+        debug('Navigating to next page...');
+
+        // 获取当前章节索引
+        let currentIndex = -1;
+        try {
+          if (book.spine && book.spine.items) {
+            for (let i = 0; i < book.spine.items.length; i++) {
+              if (rendition.location && rendition.location.start &&
+                  book.spine.items[i].href === rendition.location.start.href) {
+                currentIndex = i;
+                break;
+              }
+            }
+            debug('Current spine index:', currentIndex);
+          }
+        } catch (e) {
+          debug('Error getting current index:', e);
+        }
+
+        // 尝试直接使用next方法
+        try {
+          debug('Trying direct next() method');
+          rendition.next();
+          return;
+        } catch (e) {
+          debug('Direct next() failed:', e);
+        }
+
+        // 如果直接方法失败，尝试使用spine导航
+        try {
+          if (currentIndex !== -1 && currentIndex < book.spine.items.length - 1) {
+            debug('Using spine navigation to next chapter');
+            const nextHref = book.spine.items[currentIndex + 1].href;
+            debug('Next href:', nextHref);
+            rendition.display(nextHref);
+            return;
+          }
+        } catch (e) {
+          debug('Spine navigation failed:', e);
+        }
+
+        // 最后尝试使用display方法
+        try {
+          debug('Using display method with next option');
+          rendition.display('next');
+        } catch (e) {
+          debug('Display next failed:', e);
+          alert('无法导航到下一页');
+        }
+      }
+
+      // 获取当前章节在spine中的索引
+      function getCurrentSpineIndex() {
+        try {
+          if (!book || !book.spine || !book.spine.items || !rendition || !rendition.location) {
+            return -1;
+          }
+
+          const currentHref = rendition.location.start.href;
+          for (let i = 0; i < book.spine.items.length; i++) {
+            if (book.spine.items[i].href === currentHref) {
+              return i;
+            }
+          }
+          return -1;
+        } catch (error) {
+          debug('Error getting current spine index:', error);
+          return -1;
+        }
+      }
+
+      // 尝试备用导航方法
+      function tryAlternativeNavigation(direction) {
+        debug('Trying alternative navigation:', direction);
+
+        try {
+          // 方法1: 使用spine导航
+          if (book.package && book.package.metadata && book.package.spine) {
+            debug('Using spine navigation');
+            const current = book.package.spine.find(item => item.href === rendition.location.start.href);
+            const index = book.package.spine.indexOf(current);
+
+            if (direction === 'next' && index < book.package.spine.length - 1) {
+              const next = book.package.spine[index + 1];
+              debug('Navigating to next spine item:', next.href);
+              rendition.display(next.href);
+              return true;
+            } else if (direction === 'prev' && index > 0) {
+              const prev = book.package.spine[index - 1];
+              debug('Navigating to previous spine item:', prev.href);
+              rendition.display(prev.href);
+              return true;
+            }
+          }
+
+          // 方法2: 使用CFI导航
+          if (rendition.location && rendition.location.start && rendition.location.start.cfi) {
+            debug('Using CFI navigation');
+            const cfi = rendition.location.start.cfi;
+
+            if (direction === 'next') {
+              const newCfi = book.locations.cfiFromPercentage(
+                Math.min(1, book.locations.percentageFromCfi(cfi) + 0.05)
+              );
+              debug('Navigating to next CFI:', newCfi);
+              rendition.display(newCfi);
+              return true;
+            } else if (direction === 'prev') {
+              const newCfi = book.locations.cfiFromPercentage(
+                Math.max(0, book.locations.percentageFromCfi(cfi) - 0.05)
+              );
+              debug('Navigating to previous CFI:', newCfi);
+              rendition.display(newCfi);
+              return true;
+            }
+          }
+
+          debug('No alternative navigation method available');
+          return false;
+        } catch (error) {
+          debug('Error in alternative navigation:', error);
+          return false;
+        }
+      }
+
+      // 添加调试按钮事件
+      debugBtn.addEventListener('click', function() {
+        let debugInfo = '';
+
+        // 检查库是否加载
+        debugInfo += 'JSZip loaded: ' + (typeof JSZip !== 'undefined') + '\n';
+        debugInfo += 'ePub.js loaded: ' + (typeof ePub !== 'undefined') + '\n\n';
+
+        // 检查DOM元素
+        debugInfo += 'EPUB viewer element exists: ' + (epubViewer !== null) + '\n';
+        if (epubViewer) {
+          debugInfo += 'EPUB viewer dimensions: ' + epubViewer.offsetWidth + 'x' + epubViewer.offsetHeight + '\n';
+        }
+
+        // 检查iframe
+        const iframe = document.querySelector('#epub-viewer iframe');
+        debugInfo += 'Iframe exists: ' + (iframe !== null) + '\n';
+        if (iframe) {
+          debugInfo += 'Iframe dimensions: ' + iframe.offsetWidth + 'x' + iframe.offsetHeight + '\n';
+          try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            debugInfo += 'Iframe document accessible: ' + (iframeDoc !== null) + '\n';
+            if (iframeDoc) {
+              debugInfo += 'Iframe body content length: ' + iframeDoc.body.innerHTML.length + '\n';
+            }
+          } catch (e) {
+            debugInfo += 'Error accessing iframe: ' + e.message + '\n';
+          }
+        }
+
+        // 检查book对象
+        debugInfo += '\nBook object exists: ' + (book !== undefined) + '\n';
+        if (book) {
+          debugInfo += 'Book ready: ' + (book.ready !== undefined) + '\n';
+          debugInfo += 'Book spine: ' + (book.spine !== undefined) + '\n';
+          if (book.spine) {
+            debugInfo += 'Book spine length: ' + book.spine.length + '\n';
+            debugInfo += 'First spine item: ' + (book.spine.items && book.spine.items.length > 0 ? book.spine.items[0].href : 'N/A') + '\n';
+            if (book.spine.items && book.spine.items.length > 1) {
+              debugInfo += 'Second spine item: ' + book.spine.items[1].href + '\n';
+            }
+          }
+          debugInfo += 'Book package: ' + (book.package !== undefined) + '\n';
+          debugInfo += 'Book navigation: ' + (book.navigation !== undefined) + '\n';
+          if (book.navigation) {
+            debugInfo += 'Navigation TOC length: ' + (book.navigation.toc ? book.navigation.toc.length : 'N/A') + '\n';
+          }
+        }
+
+        // 检查rendition对象
+        debugInfo += '\nRendition object exists: ' + (rendition !== undefined) + '\n';
+        if (rendition) {
+          debugInfo += 'Rendition displayed: ' + (rendition.displayed !== undefined) + '\n';
+          debugInfo += 'Rendition flow: ' + (rendition.flow || 'N/A') + '\n';
+
+          if (rendition.location) {
+            debugInfo += 'Current location: ' + JSON.stringify(rendition.location.start) + '\n';
+            debugInfo += 'Current percentage: ' + (rendition.location.start ? rendition.location.start.percentage * 100 + '%' : 'N/A') + '\n';
+          }
+
+          // 检查导航方法
+          debugInfo += 'next() method: ' + (typeof rendition.next === 'function' ? 'Available' : 'Not available') + '\n';
+          debugInfo += 'prev() method: ' + (typeof rendition.prev === 'function' ? 'Available' : 'Not available') + '\n';
+        }
+
+        // 显示调试信息
+        console.log('Debug Information:');
+        console.log(debugInfo);
+
+        // 创建一个临时的文本区域来显示调试信息
+        const debugTextarea = document.createElement('textarea');
+        debugTextarea.value = debugInfo;
+        debugTextarea.style.position = 'fixed';
+        debugTextarea.style.top = '50%';
+        debugTextarea.style.left = '50%';
+        debugTextarea.style.transform = 'translate(-50%, -50%)';
+        debugTextarea.style.width = '80%';
+        debugTextarea.style.height = '80%';
+        debugTextarea.style.zIndex = '1000';
+        debugTextarea.style.padding = '10px';
+        debugTextarea.style.backgroundColor = '#fff';
+        debugTextarea.style.border = '1px solid #ccc';
+        debugTextarea.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+        debugTextarea.style.fontSize = '14px';
+        debugTextarea.style.fontFamily = 'monospace';
+
+        // 添加关闭按钮
+        const closeButton = document.createElement('button');
+        closeButton.textContent = 'Close';
+        closeButton.style.position = 'fixed';
+        closeButton.style.top = '10%';
+        closeButton.style.right = '11%';
+        closeButton.style.zIndex = '1001';
+        closeButton.style.padding = '5px 10px';
+        closeButton.style.backgroundColor = '#4a4238';
+        closeButton.style.color = 'white';
+        closeButton.style.border = 'none';
+        closeButton.style.borderRadius = '4px';
+        closeButton.style.cursor = 'pointer';
+
+        closeButton.addEventListener('click', function() {
+          document.body.removeChild(debugTextarea);
+          document.body.removeChild(closeButton);
+        });
+
+        document.body.appendChild(debugTextarea);
+        document.body.appendChild(closeButton);
+      });
+    });
+  </script>
+</body>
+</html>
