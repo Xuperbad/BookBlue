@@ -327,7 +327,7 @@
 
       // 更新页面显示 - 全局函数
       function updatePages(startLocation) {
-        debug('Updating pages from location:', startLocation);
+        console.log(`[导航] 更新页面显示，位置: ${startLocation}`);
 
         // 确保位置在有效范围内
         if (startLocation < 0) startLocation = 0;
@@ -336,25 +336,57 @@
         // 更新当前位置
         currentLocation = startLocation;
 
-        // 获取CFI位置
-        const cfi = book.locations.cfiFromLocation(startLocation);
+        // 有多种导航方式可选
+        let displayTarget;
 
-        console.log(`[导航] 跳转到位置 ${startLocation}，CFI: ${cfi}`);
+        // 1. 使用位置索引（转换为CFI）
+        const cfi = book.locations.cfiFromLocation(startLocation);
+        displayTarget = cfi;
+
+        // 2. 也可以使用百分比导航
+        // const percentage = book.locations.percentageFromLocation(startLocation);
+        // displayTarget = percentage; // 直接传递百分比值，如0.5表示50%
+
+        // 3. 或者使用章节URL导航
+        // displayTarget = book.spine.get(chapterIndex).href;
+
+        console.log(`[导航] 使用CFI导航: ${cfi}`);
 
         // 显示页面
-        rendition.display(cfi).then(() => {
-          debug('Page displayed at location:', startLocation);
+        rendition.display(displayTarget).then(() => {
+          console.log(`[导航] 页面显示成功，位置: ${startLocation}`);
 
           // 获取当前位置信息
-          rendition.currentLocation().then(location => {
-            console.log(`[当前位置] 开始: ${location.start.cfi}`);
-            console.log(`[当前位置] 结束: ${location.end.cfi}`);
-            console.log(`[当前位置] 百分比: ${location.start.percentage * 100}%`);
-            console.log(`[当前位置] 章节: ${location.start.href}`);
+          setTimeout(() => {
+            try {
+              // 直接获取当前位置，不使用Promise
+              const location = rendition.location;
+              if (location && location.start) {
+                // 输出详细位置信息
+                console.log(`[当前位置] 开始: ${location.start.cfi}`);
+                console.log(`[当前位置] 结束: ${location.end.cfi}`);
+                console.log(`[当前位置] 百分比: ${(location.start.percentage * 100).toFixed(2)}%`);
+                console.log(`[当前位置] 章节: ${location.start.href}`);
 
-            // 存储当前位置的详细信息，用于更精确的导航
-            window.currentLocationInfo = location;
-          });
+                if (location.start.displayed) {
+                  console.log(`[当前位置] 当前页: ${location.start.displayed.page}`);
+                  console.log(`[当前位置] 总页数: ${location.start.displayed.total}`);
+                }
+
+                // 存储当前位置的详细信息，用于更精确的导航
+                window.currentLocationInfo = location;
+              }
+            } catch (error) {
+              console.error('[当前位置] 获取位置信息出错:', error);
+            }
+          }, 100);
+
+
+
+          // 保存阅读进度
+          if (currentBook) {
+            localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+          }
 
           // 打印容器和内容尺寸
           setTimeout(() => {
@@ -487,15 +519,30 @@
 
             // 添加事件监听器来跟踪加载过程
             book.on('book:ready', function() {
-              debug('Event: Book is ready!');
+              console.log('[事件] 书籍准备就绪');
             });
 
             book.on('rendition:display', function(location) {
-              debug('Event: Rendition displayed at location', location);
+              console.log(`[事件] 渲染显示在位置: ${location}`);
             });
 
             book.on('rendition:error', function(error) {
-              debug('Event: Rendition error', error);
+              console.error('[事件] 渲染错误:', error);
+            });
+
+            // 添加更多事件监听器
+            book.on('book:open', function() {
+              console.log('[事件] 书籍已打开');
+            });
+
+            book.on('book:loaded', function(contents) {
+              console.log('[事件] 书籍内容已加载');
+              // 可以在这里获取书籍元数据
+              book.loaded.metadata.then(meta => {
+                console.log(`[元数据] 标题: ${meta.title}`);
+                console.log(`[元数据] 作者: ${meta.creator}`);
+                if (meta.description) console.log(`[元数据] 描述: ${meta.description.substring(0, 100)}...`);
+              });
             });
 
             // 使用FileReader读取文件为ArrayBuffer
@@ -541,17 +588,44 @@
 
                 // 生成位置信息
                 book.ready.then(() => {
-                  // 生成位置信息
-                  return book.locations.generate(1024);
+                  // 检查是否有保存的位置信息
+                  const storedLocations = localStorage.getItem(`${currentBook}-locations`);
+
+                  if (storedLocations) {
+                    // 如果有保存的位置信息，直接加载
+                    console.log('[位置] 加载保存的位置信息');
+                    return book.locations.load(JSON.parse(storedLocations));
+                  } else {
+                    // 否则生成新的位置信息
+                    console.log('[位置] 生成新的位置信息');
+                    return book.locations.generate(1024).then(locations => {
+                      // 保存位置信息到本地存储
+                      localStorage.setItem(`${currentBook}-locations`, JSON.stringify(locations));
+                      return locations;
+                    });
+                  }
                 }).then((locations) => {
-                  debug('Locations generated:', locations);
+                  console.log('[位置] 位置信息准备完成');
                   totalLocations = book.locations.total;
-                  debug('Total locations:', totalLocations);
+                  console.log(`[位置] 总位置数: ${totalLocations}`);
+
+                  // 检查是否有保存的阅读进度
+                  const storedProgress = localStorage.getItem(`${currentBook}-progress`);
+                  let startLocation = 0;
+
+                  if (storedProgress) {
+                    try {
+                      startLocation = parseInt(storedProgress, 10);
+                      console.log(`[位置] 恢复阅读进度: ${startLocation}`);
+                    } catch (e) {
+                      console.log('[位置] 无法解析保存的阅读进度，从头开始');
+                    }
+                  }
 
                   // 初始化显示
-                  updatePages(0);
+                  updatePages(startLocation);
                 }).catch(error => {
-                  debug('Error generating locations:', error);
+                  console.error('Error handling locations:', error);
                 });
 
                 // 添加键盘事件处理
@@ -607,7 +681,7 @@
 
                 // 添加渲染器事件监听
                 rendition.on('rendered', function(section) {
-                  debug('Event: Page rendered section', section.href);
+                  console.log(`[渲染事件] 章节已渲染: ${section.href}`);
 
                   // 检查iframe内容
                   setTimeout(function() {
@@ -615,7 +689,7 @@
                     if (iframe) {
                       try {
                         const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        debug('Iframe content after render:', {
+                        console.log('[渲染事件] iframe内容信息:', {
                           bodyLength: iframeDoc.body.innerHTML.length,
                           title: iframeDoc.title,
                           childNodes: iframeDoc.body.childNodes.length
@@ -629,32 +703,60 @@
                         // 移除点击翻页功能，只保留键盘和滚轮导航
                         if (iframeDoc) {
                           // 不再添加点击事件处理器
-                          debug('Click navigation disabled as requested');
+                          console.log('[渲染事件] 点击导航已禁用');
                         }
                       } catch (e) {
-                        debug('Error accessing iframe content:', e);
+                        console.error('[渲染事件] 访问iframe内容出错:', e);
                       }
                     }
                   }, 100);
                 });
 
+                // 添加更多渲染器事件
+                rendition.on('started', function() {
+                  console.log('[渲染事件] 渲染器已启动');
+                });
+
+                rendition.on('resized', function(size) {
+                  console.log(`[渲染事件] 渲染器已调整大小: ${size.width}x${size.height}像素`);
+                });
+
+                // 监听但不处理点击事件
+                rendition.on('click', function(event) {
+                  // 阻止默认行为，不进行导航
+                  event.preventDefault();
+                  console.log('[渲染事件] 点击事件已捕获但不处理');
+                });
+
                 // 添加位置变化事件监听
                 rendition.on('relocated', function(location) {
-                  console.log(`[位置变化] 当前页: ${location.start.displayed.page}`);
-                  console.log(`[位置变化] 总页数: ${location.start.displayed.total}`);
-                  console.log(`[位置变化] 百分比: ${(location.start.percentage * 100).toFixed(2)}%`);
-                  console.log(`[位置变化] 章节: ${location.start.href}`);
-
-                  // 尝试从当前位置获取位置索引
-                  try {
-                    const locationCfi = location.start.cfi;
-                    const newLocation = book.locations.locationFromCfi(locationCfi);
-                    if (newLocation !== currentLocation) {
-                      currentLocation = newLocation;
-                      console.log(`[位置变化] 更新位置索引: ${currentLocation}`);
+                  if (location && location.start) {
+                    if (location.start.displayed) {
+                      console.log(`[位置变化] 当前页: ${location.start.displayed.page}`);
+                      console.log(`[位置变化] 总页数: ${location.start.displayed.total}`);
                     }
-                  } catch (e) {
-                    console.log(`[位置变化] 无法获取位置索引: ${e.message}`);
+                    console.log(`[位置变化] 百分比: ${(location.start.percentage * 100).toFixed(2)}%`);
+                    console.log(`[位置变化] 章节: ${location.start.href}`);
+
+                    // 尝试从当前位置获取位置索引
+                    try {
+                      const locationCfi = location.start.cfi;
+                      const newLocation = book.locations.locationFromCfi(locationCfi);
+                      if (newLocation !== currentLocation) {
+                        currentLocation = newLocation;
+                        console.log(`[位置变化] 更新位置索引: ${currentLocation}`);
+
+                        // 保存阅读进度
+                        if (currentBook) {
+                          localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+                          console.log(`[位置变化] 保存阅读进度: ${currentLocation}`);
+                        }
+                      }
+                    } catch (e) {
+                      console.log(`[位置变化] 无法获取位置索引: ${e.message}`);
+                    }
+                  } else {
+                    console.log('[位置变化] 收到位置变化事件，但位置信息不完整');
                   }
                 });
 
@@ -775,17 +877,25 @@
         // 使用rendition的prev方法导航到上一页
         rendition.prev().then(function() {
           // 导航成功后更新当前位置
-          rendition.currentLocation().then(location => {
+          setTimeout(() => {
             // 尝试从当前位置获取位置索引
             try {
-              const locationCfi = location.start.cfi;
-              const newLocation = book.locations.locationFromCfi(locationCfi);
-              currentLocation = newLocation;
-              console.log(`[导航] 上一页成功，当前位置: ${currentLocation}`);
+              const location = rendition.location;
+              if (location && location.start) {
+                const locationCfi = location.start.cfi;
+                const newLocation = book.locations.locationFromCfi(locationCfi);
+                currentLocation = newLocation;
+                console.log(`[导航] 上一页成功，当前位置: ${currentLocation}`);
+
+                // 保存阅读进度
+                if (currentBook) {
+                  localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+                }
+              }
             } catch (e) {
               console.log(`[导航] 上一页成功，但无法获取位置索引: ${e.message}`);
             }
-          });
+          }, 100);
         }).catch(function(err) {
           console.log(`[导航] 已经是第一页: ${err}`);
           debug('Already at the beginning of the book');
@@ -804,17 +914,25 @@
         // 使用rendition的next方法导航到下一页
         rendition.next().then(function() {
           // 导航成功后更新当前位置
-          rendition.currentLocation().then(location => {
+          setTimeout(() => {
             // 尝试从当前位置获取位置索引
             try {
-              const locationCfi = location.start.cfi;
-              const newLocation = book.locations.locationFromCfi(locationCfi);
-              currentLocation = newLocation;
-              console.log(`[导航] 下一页成功，当前位置: ${currentLocation}`);
+              const location = rendition.location;
+              if (location && location.start) {
+                const locationCfi = location.start.cfi;
+                const newLocation = book.locations.locationFromCfi(locationCfi);
+                currentLocation = newLocation;
+                console.log(`[导航] 下一页成功，当前位置: ${currentLocation}`);
+
+                // 保存阅读进度
+                if (currentBook) {
+                  localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+                }
+              }
             } catch (e) {
               console.log(`[导航] 下一页成功，但无法获取位置索引: ${e.message}`);
             }
-          });
+          }, 100);
         }).catch(function(err) {
           console.log(`[导航] 已经是最后一页: ${err}`);
           debug('Already at the end of the book');
@@ -831,7 +949,7 @@
         // 防抖动处理，避免频繁调整大小时多次渲染
         clearTimeout(window.resizeTimer);
         window.resizeTimer = setTimeout(function() {
-          debug('Window resized, adjusting rendition...');
+          console.log('[窗口调整] 调整渲染器尺寸...');
 
           // 获取新的容器尺寸
           const container = document.getElementById('epub-container');
@@ -840,23 +958,44 @@
 
           console.log(`[窗口调整] 新容器尺寸: ${newWidth}x${newHeight}像素`);
 
-          // 调整渲染器尺寸
-          rendition.resize(newWidth, newHeight);
+          // 获取当前位置信息，用于调整后恢复
+          try {
+            // 直接获取当前位置，不使用Promise
+            const location = rendition.location;
+            if (location && location.start) {
+              const currentCfi = location.start.cfi;
+              console.log(`[窗口调整] 当前位置CFI: ${currentCfi}`);
 
-          // 重新渲染当前位置
-          const cfi = book.locations.cfiFromLocation(currentLocation);
-          rendition.display(cfi).then(() => {
-            console.log(`[窗口调整] 在位置 ${currentLocation} 重新渲染内容`);
+              // 调整渲染器尺寸
+              rendition.resize(newWidth, newHeight);
 
-            // 打印容器和内容尺寸
-            setTimeout(() => {
-              const iframe = document.querySelector('#epub-container iframe');
-              if (iframe) {
-                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                console.log(`[窗口调整后] iframe内容: ${iframeDoc.body.scrollWidth}x${iframeDoc.body.scrollHeight}像素`);
-              }
-            }, 100);
-          });
+              // 使用当前CFI重新渲染
+              rendition.display(currentCfi);
+              console.log('[窗口调整] 重新渲染完成');
+            } else {
+              console.log('[窗口调整] 无法获取当前位置，使用保存的位置索引');
+              // 使用保存的位置索引
+              const cfi = book.locations.cfiFromLocation(currentLocation);
+              rendition.resize(newWidth, newHeight);
+              rendition.display(cfi);
+            }
+          } catch (error) {
+            console.error('[窗口调整] 获取当前位置出错:', error);
+
+            // 如果出错，使用保存的位置索引
+            const cfi = book.locations.cfiFromLocation(currentLocation);
+            rendition.resize(newWidth, newHeight);
+            rendition.display(cfi);
+          }
+
+          // 打印容器和内容尺寸
+          setTimeout(() => {
+            const iframe = document.querySelector('#epub-container iframe');
+            if (iframe) {
+              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+              console.log(`[窗口调整后] iframe内容: ${iframeDoc.body.scrollWidth}x${iframeDoc.body.scrollHeight}像素`);
+            }
+          }, 300);
         }, 250); // 250ms的防抖动延迟
       }
 
