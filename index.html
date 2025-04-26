@@ -305,9 +305,7 @@
           <p style="margin-bottom: 10px; font-size: 0.9rem;">Or try with a sample EPUB:</p>
           <button id="load-sample-btn" style="background-color: #5d5347;" disabled>Load Sample EPUB</button>
         </div>
-        <div style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
-          <button id="debug-btn" style="background-color: #666; font-size: 0.8rem;">Debug Info</button>
-        </div>
+
       </div>
       <!-- 极简界面，移除了导航条 -->
     </div>
@@ -329,13 +327,14 @@
       console.error('Error column:', event.colno);
     });
 
-    // 调试函数
+    // 调试函数 - 简化版，只在控制台输出
     function debug(message, obj) {
-      const timestamp = new Date().toISOString().substr(11, 8);
-      console.log(`[${timestamp}] ${message}`);
-      if (obj !== undefined) {
-        console.log(obj);
-      }
+      // 在生产环境中可以完全禁用调试输出
+      // const timestamp = new Date().toISOString().substr(11, 8);
+      // console.log(`[${timestamp}] ${message}`);
+      // if (obj !== undefined) {
+      //   console.log(obj);
+      // }
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -356,7 +355,7 @@
       const epubViewer = document.getElementById('epub-viewer');
       const notesTextarea = document.getElementById('notes');
       const saveNotesBtn = document.getElementById('save-notes');
-      const debugBtn = document.getElementById('debug-btn');
+      // 移除了调试按钮相关变量
       // 移除了紧急导航按钮相关变量
 
       // 全局变量
@@ -773,21 +772,10 @@
                           childNodes: iframeDoc.body.childNodes.length
                         });
 
-                        // 添加点击事件处理
+                        // 移除点击翻页功能，只保留键盘和滚轮导航
                         if (iframeDoc) {
-                          iframeDoc.addEventListener('click', function(event) {
-                            const width = iframeDoc.documentElement.clientWidth;
-                            const x = event.clientX;
-
-                            // 点击左侧1/3区域向前翻页，右侧1/3区域向后翻页
-                            if (x < width / 3) {
-                              debug('Click on left side, navigating prev');
-                              navigatePrev();
-                            } else if (x > width * 2 / 3) {
-                              debug('Click on right side, navigating next');
-                              navigateNext();
-                            }
-                          });
+                          // 不再添加点击事件处理器
+                          debug('Click navigation disabled as requested');
                         }
                       } catch (e) {
                         debug('Error accessing left iframe content:', e);
@@ -812,21 +800,10 @@
                           childNodes: iframeDoc.body.childNodes.length
                         });
 
-                        // 添加点击事件处理
+                        // 移除点击翻页功能，只保留键盘和滚轮导航
                         if (iframeDoc) {
-                          iframeDoc.addEventListener('click', function(event) {
-                            const width = iframeDoc.documentElement.clientWidth;
-                            const x = event.clientX;
-
-                            // 点击左侧1/3区域向前翻页，右侧1/3区域向后翻页
-                            if (x < width / 3) {
-                              debug('Click on left side, navigating prev');
-                              navigatePrev();
-                            } else if (x > width * 2 / 3) {
-                              debug('Click on right side, navigating next');
-                              navigateNext();
-                            }
-                          });
+                          // 不再添加点击事件处理器
+                          debug('Click navigation disabled as requested');
                         }
                       } catch (e) {
                         debug('Error accessing right iframe content:', e);
@@ -1100,150 +1077,7 @@
         }
       }
 
-      // 添加调试按钮事件
-      debugBtn.addEventListener('click', function() {
-        let debugInfo = '';
-
-        // 检查库是否加载
-        debugInfo += 'JSZip loaded: ' + (typeof JSZip !== 'undefined') + '\n';
-        debugInfo += 'ePub.js loaded: ' + (typeof ePub !== 'undefined') + '\n\n';
-
-        // 检查DOM元素
-        debugInfo += 'EPUB viewer element exists: ' + (epubViewer !== null) + '\n';
-        if (epubViewer) {
-          debugInfo += 'EPUB viewer dimensions: ' + epubViewer.offsetWidth + 'x' + epubViewer.offsetHeight + '\n';
-        }
-
-        // 检查左侧iframe
-        const leftIframe = document.querySelector('#left-page iframe');
-        debugInfo += 'Left iframe exists: ' + (leftIframe !== null) + '\n';
-        if (leftIframe) {
-          debugInfo += 'Left iframe dimensions: ' + leftIframe.offsetWidth + 'x' + leftIframe.offsetHeight + '\n';
-          try {
-            const iframeDoc = leftIframe.contentDocument || leftIframe.contentWindow.document;
-            debugInfo += 'Left iframe document accessible: ' + (iframeDoc !== null) + '\n';
-            if (iframeDoc) {
-              debugInfo += 'Left iframe body content length: ' + iframeDoc.body.innerHTML.length + '\n';
-            }
-          } catch (e) {
-            debugInfo += 'Error accessing left iframe: ' + e.message + '\n';
-          }
-        }
-
-        // 检查右侧iframe
-        const rightIframe = document.querySelector('#right-page iframe');
-        debugInfo += 'Right iframe exists: ' + (rightIframe !== null) + '\n';
-        if (rightIframe) {
-          debugInfo += 'Right iframe dimensions: ' + rightIframe.offsetWidth + 'x' + rightIframe.offsetHeight + '\n';
-          try {
-            const iframeDoc = rightIframe.contentDocument || rightIframe.contentWindow.document;
-            debugInfo += 'Right iframe document accessible: ' + (iframeDoc !== null) + '\n';
-            if (iframeDoc) {
-              debugInfo += 'Right iframe body content length: ' + iframeDoc.body.innerHTML.length + '\n';
-            }
-          } catch (e) {
-            debugInfo += 'Error accessing right iframe: ' + e.message + '\n';
-          }
-        }
-
-        // 检查book对象
-        debugInfo += '\nBook object exists: ' + (book !== undefined) + '\n';
-        if (book) {
-          debugInfo += 'Book ready: ' + (book.ready !== undefined) + '\n';
-          debugInfo += 'Book spine: ' + (book.spine !== undefined) + '\n';
-          if (book.spine) {
-            debugInfo += 'Book spine length: ' + book.spine.length + '\n';
-            debugInfo += 'First spine item: ' + (book.spine.items && book.spine.items.length > 0 ? book.spine.items[0].href : 'N/A') + '\n';
-            if (book.spine.items && book.spine.items.length > 1) {
-              debugInfo += 'Second spine item: ' + book.spine.items[1].href + '\n';
-            }
-          }
-          debugInfo += 'Book package: ' + (book.package !== undefined) + '\n';
-          debugInfo += 'Book navigation: ' + (book.navigation !== undefined) + '\n';
-          if (book.navigation) {
-            debugInfo += 'Navigation TOC length: ' + (book.navigation.toc ? book.navigation.toc.length : 'N/A') + '\n';
-          }
-        }
-
-        // 检查左侧rendition对象
-        debugInfo += '\nLeft rendition object exists: ' + (leftRendition !== undefined) + '\n';
-        if (leftRendition) {
-          debugInfo += 'Left rendition displayed: ' + (leftRendition.displayed !== undefined) + '\n';
-          debugInfo += 'Left rendition flow: ' + (leftRendition.flow || 'N/A') + '\n';
-
-          if (leftRendition.location) {
-            debugInfo += 'Left current location: ' + JSON.stringify(leftRendition.location.start) + '\n';
-            debugInfo += 'Left current percentage: ' + (leftRendition.location.start ? leftRendition.location.start.percentage * 100 + '%' : 'N/A') + '\n';
-          }
-
-          // 检查导航方法
-          debugInfo += 'Left next() method: ' + (typeof leftRendition.next === 'function' ? 'Available' : 'Not available') + '\n';
-          debugInfo += 'Left prev() method: ' + (typeof leftRendition.prev === 'function' ? 'Available' : 'Not available') + '\n';
-        }
-
-        // 检查右侧rendition对象
-        debugInfo += '\nRight rendition object exists: ' + (rightRendition !== undefined) + '\n';
-        if (rightRendition) {
-          debugInfo += 'Right rendition displayed: ' + (rightRendition.displayed !== undefined) + '\n';
-          debugInfo += 'Right rendition flow: ' + (rightRendition.flow || 'N/A') + '\n';
-
-          if (rightRendition.location) {
-            debugInfo += 'Right current location: ' + JSON.stringify(rightRendition.location.start) + '\n';
-            debugInfo += 'Right current percentage: ' + (rightRendition.location.start ? rightRendition.location.start.percentage * 100 + '%' : 'N/A') + '\n';
-          }
-
-          // 检查导航方法
-          debugInfo += 'Right next() method: ' + (typeof rightRendition.next === 'function' ? 'Available' : 'Not available') + '\n';
-          debugInfo += 'Right prev() method: ' + (typeof rightRendition.prev === 'function' ? 'Available' : 'Not available') + '\n';
-        }
-
-        // 检查位置信息
-        debugInfo += '\nCurrent location index: ' + currentLocation + '\n';
-        debugInfo += 'Total locations: ' + totalLocations + '\n';
-
-        // 显示调试信息
-        console.log('Debug Information:');
-        console.log(debugInfo);
-
-        // 创建一个临时的文本区域来显示调试信息
-        const debugTextarea = document.createElement('textarea');
-        debugTextarea.value = debugInfo;
-        debugTextarea.style.position = 'fixed';
-        debugTextarea.style.top = '50%';
-        debugTextarea.style.left = '50%';
-        debugTextarea.style.transform = 'translate(-50%, -50%)';
-        debugTextarea.style.width = '80%';
-        debugTextarea.style.height = '80%';
-        debugTextarea.style.zIndex = '1000';
-        debugTextarea.style.padding = '10px';
-        debugTextarea.style.backgroundColor = '#fff';
-        debugTextarea.style.border = '1px solid #ccc';
-        debugTextarea.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
-        debugTextarea.style.fontSize = '14px';
-        debugTextarea.style.fontFamily = 'monospace';
-
-        // 添加关闭按钮
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Close';
-        closeButton.style.position = 'fixed';
-        closeButton.style.top = '10%';
-        closeButton.style.right = '11%';
-        closeButton.style.zIndex = '1001';
-        closeButton.style.padding = '5px 10px';
-        closeButton.style.backgroundColor = '#4a4238';
-        closeButton.style.color = 'white';
-        closeButton.style.border = 'none';
-        closeButton.style.borderRadius = '4px';
-        closeButton.style.cursor = 'pointer';
-
-        closeButton.addEventListener('click', function() {
-          document.body.removeChild(debugTextarea);
-          document.body.removeChild(closeButton);
-        });
-
-        document.body.appendChild(debugTextarea);
-        document.body.appendChild(closeButton);
-      });
+      // 移除了调试按钮事件处理
     });
   </script>
 </body>
