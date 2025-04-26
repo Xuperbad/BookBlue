@@ -115,11 +115,84 @@
     }
 
     .notes-area {
-      width: 350px;
+      width: 30px; /* 默认收起状态的宽度 */
       background-color: #f5f2e9;
-      border-left: 1px solid #e0e0e0;
       height: 100%;
       position: relative;
+      transition: width 0.3s ease;
+      overflow: hidden;
+      box-shadow: -1px 0 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .notes-area.expanded {
+      width: 350px; /* 展开状态的宽度 */
+    }
+
+    .notes-toggle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 30px;
+      height: 100%;
+      background-color: #f5f2e9;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .notes-toggle:hover {
+      background-color: #ebe5d6;
+    }
+
+    .notes-toggle::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 2px;
+      background-color: #4a4238;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .notes-toggle:hover::after {
+      opacity: 0.15;
+    }
+
+    .notes-toggle .icon {
+      font-size: 16px;
+      color: #8a7a6a;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.7;
+      transition: opacity 0.2s ease, color 0.2s ease;
+    }
+
+    .notes-toggle:hover .icon {
+      opacity: 1;
+      color: #4a4238;
+    }
+
+    .notes-content {
+      position: absolute;
+      left: 30px;
+      top: 0;
+      width: calc(100% - 30px);
+      height: 100%;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s;
+    }
+
+    .notes-area.expanded .notes-content {
+      opacity: 1;
+      visibility: visible;
     }
 
     #epub-container {
@@ -200,18 +273,12 @@
       background-color: #4a4238;
       color: white;
       margin: 0 auto;
-      transition: transform 0.2s, background-color 0.2s;
     }
 
     .plus-icon {
       font-size: 3rem;
       line-height: 1;
       display: block;
-    }
-
-    .drop-area:not(.disabled):hover .plus-container {
-      background-color: #5d5347;
-      transform: scale(1.1);
     }
 
     #file-input {
@@ -243,6 +310,7 @@
       border: none;
       outline: none;
       color: #4a4238;
+      box-sizing: border-box;
     }
 
     /* 极简界面，移除了页面信息样式 */
@@ -279,8 +347,13 @@
       <!-- 极简界面，移除了导航条 -->
     </div>
 
-    <div class="notes-area">
-      <textarea id="notes" placeholder="Click here to write your notes..."></textarea>
+    <div class="notes-area" id="notes-area">
+      <div class="notes-toggle" id="notes-toggle">
+        <span class="icon">></span>
+      </div>
+      <div class="notes-content">
+        <textarea id="notes" placeholder="Click here to write your notes..."></textarea>
+      </div>
     </div>
   </div>
 
@@ -314,6 +387,8 @@
       const dropArea = document.getElementById('drop-area');
       const epubViewer = document.getElementById('epub-viewer');
       const notesTextarea = document.getElementById('notes');
+      const notesArea = document.getElementById('notes-area');
+      const notesToggle = document.getElementById('notes-toggle');
       // 移除了调试按钮相关变量
       // 移除了紧急导航按钮相关变量
 
@@ -464,6 +539,80 @@
           localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
         }
       });
+
+      // 更新笔记区域的箭头方向
+      function updateNotesToggleIcon(isExpanded) {
+        const icon = notesToggle.querySelector('.icon');
+        if (isExpanded) {
+          icon.textContent = '>'; // 展开状态显示左箭头（指向收起方向）
+        } else {
+          icon.textContent = '<'; // 收起状态显示右箭头（指向展开方向）
+        }
+      }
+
+      // 设置笔记区域的展开状态
+      function setNotesAreaExpanded(isExpanded, rerender = true) {
+        // 更新DOM状态
+        if (isExpanded) {
+          notesArea.classList.add('expanded');
+        } else {
+          notesArea.classList.remove('expanded');
+        }
+
+        // 更新箭头方向
+        updateNotesToggleIcon(isExpanded);
+
+        // 保存状态到本地存储
+        localStorage.setItem('notes-expanded', isExpanded ? 'true' : 'false');
+
+        // 如果需要重新渲染，且书籍和渲染器已加载
+        if (rerender && book && rendition) {
+          // 重新渲染页面，因为可用空间发生了变化
+          setTimeout(() => {
+            // 获取当前容器尺寸
+            const container = document.getElementById('epub-container');
+            const newWidth = container.clientWidth;
+            const newHeight = container.clientHeight;
+
+            console.log(`[笔记区域] ${isExpanded ? '展开' : '收起'}后重新渲染，新容器尺寸: ${newWidth}x${newHeight}像素`);
+
+            // 调整渲染器尺寸
+            rendition.resize(newWidth, newHeight);
+
+            // 使用当前位置重新渲染
+            try {
+              const location = rendition.location;
+              if (location && location.start) {
+                rendition.display(location.start.cfi);
+              } else {
+                // 如果无法获取当前位置，使用保存的位置
+                const cfi = book.locations.cfiFromLocation(currentLocation);
+                rendition.display(cfi);
+              }
+            } catch (error) {
+              console.error('[笔记区域] 重新渲染出错:', error);
+              // 使用保存的位置
+              const cfi = book.locations.cfiFromLocation(currentLocation);
+              rendition.display(cfi);
+            }
+          }, 300); // 等待过渡动画完成
+        }
+      }
+
+      // 处理笔记区域的展开/收起
+      notesToggle.addEventListener('click', function() {
+        const isExpanded = !notesArea.classList.contains('expanded');
+        setNotesAreaExpanded(isExpanded);
+      });
+
+      // 恢复笔记区域状态
+      function restoreNotesAreaState() {
+        const expanded = localStorage.getItem('notes-expanded') === 'true';
+        setNotesAreaExpanded(expanded, false); // 不重新渲染，因为此时书籍可能尚未加载
+      }
+
+      // 页面加载时恢复笔记区域状态
+      restoreNotesAreaState();
 
       // 处理文件
       function handleFile(file) {
