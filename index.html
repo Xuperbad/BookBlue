@@ -549,8 +549,18 @@
 
         // 如果需要重新渲染，且书籍和渲染器已加载
         if (rerender && book && rendition) {
-          // 重新渲染页面，因为可用空间发生了变化
-          setTimeout(() => {
+          // 使用实时渲染 - 在过渡动画期间每50ms渲染一次
+          let animationTime = 0;
+          const animationDuration = 300; // 过渡动画持续时间
+          const renderInterval = 50; // 每50ms渲染一次
+
+          // 清除可能存在的旧定时器
+          if (window.notesAnimationTimer) {
+            clearInterval(window.notesAnimationTimer);
+          }
+
+          // 设置定时器，在过渡动画期间定期渲染
+          window.notesAnimationTimer = setInterval(() => {
             // 获取当前容器尺寸
             const container = document.getElementById('epub-container');
             const newWidth = container.clientWidth;
@@ -574,7 +584,16 @@
               const cfi = book.locations.cfiFromLocation(currentLocation);
               rendition.display(cfi);
             }
-          }, 300); // 等待过渡动画完成
+
+            // 更新动画时间
+            animationTime += renderInterval;
+
+            // 如果动画结束，清除定时器
+            if (animationTime >= animationDuration) {
+              clearInterval(window.notesAnimationTimer);
+              window.notesAnimationTimer = null;
+            }
+          }, renderInterval);
         }
       }
 
