@@ -644,11 +644,8 @@
                 .then(function() {
                 // 清空容器，确保没有残留内容
                 const epubContainer = document.getElementById('epub-container');
-                console.log('epub-container元素状态:', epubContainer ? '存在' : '不存在');
-
                 if (epubContainer) {
                   epubContainer.innerHTML = '';
-                  console.log('epub-container已清空');
                 } else {
                   console.error('找不到epub-container元素，无法清空内容');
                 }
@@ -657,7 +654,6 @@
                 const container = document.getElementById('epub-container');
                 const containerWidth = container ? container.clientWidth : 0;
                 const containerHeight = container ? container.clientHeight : 0;
-                console.log('容器尺寸:', containerWidth, 'x', containerHeight);
                 rendition = book.renderTo('epub-container', {
                   width: containerWidth,
                   height: containerHeight,
@@ -804,18 +800,16 @@
 
                         // 设置滚动阈值和冷却时间
                         const now = Date.now();
-                        if (now - (window.lastWheelTime || 0) < 150) return;
+                        if (now - (window.lastWheelTime || 0) < 50) return;
                         window.lastWheelTime = now;
 
                         // 根据滚动方向导航
-                        if (event.deltaY > 10) {
+                        if (event.deltaY > 2) {
                           // 向下滚动，前进到下一页
-                          console.log('向下滚动，尝试导航到下一页');
-                          window.navigateNext(); // 使用全局函数
-                        } else if (event.deltaY < -10) {
+                          window.navigateNext();
+                        } else if (event.deltaY < -2) {
                           // 向上滚动，后退到上一页
-                          console.log('向上滚动，尝试导航到上一页');
-                          window.navigatePrev(); // 使用全局函数
+                          window.navigatePrev();
                         }
                       };
 
@@ -876,26 +870,19 @@
 
         if (event.key === 'ArrowLeft') {
           event.preventDefault(); // 阻止默认行为
-          console.log('键盘左箭头按下，尝试导航到上一页');
-          window.navigatePrev(); // 使用全局函数
+          window.navigatePrev();
         } else if (event.key === 'ArrowRight') {
           event.preventDefault(); // 阻止默认行为
-          console.log('键盘右箭头按下，尝试导航到下一页');
-          window.navigateNext(); // 使用全局函数
+          window.navigateNext();
         }
       }
 
       // 导航到上一页 - 使用ePub.js内置方法
       function navigatePrev() {
-        console.log('全局navigatePrev被调用');
-        if (!book || !rendition) {
-          console.log('book或rendition未初始化，无法导航');
-          return;
-        }
+        if (!book || !rendition) return;
 
         // 使用rendition的prev方法导航到上一页
         rendition.prev().then(function() {
-          console.log('导航到上一页成功');
           // 导航成功后更新当前位置
           setTimeout(() => {
             try {
@@ -917,22 +904,17 @@
               console.error('更新位置时出错:', e);
             }
           }, 100);
-        }).catch(function(err) {
-          console.log('导航到上一页失败:', err);
+        }).catch(function() {
+          // 已经是第一页
         });
       }
 
       // 导航到下一页 - 使用ePub.js内置方法
       function navigateNext() {
-        console.log('全局navigateNext被调用');
-        if (!book || !rendition) {
-          console.log('book或rendition未初始化，无法导航');
-          return;
-        }
+        if (!book || !rendition) return;
 
         // 使用rendition的next方法导航到下一页
         rendition.next().then(function() {
-          console.log('导航到下一页成功');
           // 导航成功后更新当前位置
           setTimeout(() => {
             try {
@@ -954,8 +936,8 @@
               console.error('更新位置时出错:', e);
             }
           }, 100);
-        }).catch(function(err) {
-          console.log('导航到下一页失败:', err);
+        }).catch(function() {
+          // 已经是最后一页
         });
       }
 
