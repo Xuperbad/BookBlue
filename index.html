@@ -522,6 +522,29 @@
         }
       });
 
+      // 添加笔记区域的焦点状态管理
+      let isNotesActive = false; // 全局变量，跟踪笔记区域是否处于活动状态
+
+      // 当笔记区域获得焦点时
+      notesTextarea.addEventListener('focus', function() {
+        isNotesActive = true;
+        // 可以在这里添加视觉提示，例如改变边框颜色
+        notesTextarea.style.outline = '2px solid #4a4238';
+      });
+
+      // 当笔记区域失去焦点时
+      notesTextarea.addEventListener('blur', function() {
+        isNotesActive = false;
+        // 移除视觉提示
+        notesTextarea.style.outline = 'none';
+
+        // 自动保存笔记内容
+        if (currentBook) {
+          currentNotes[currentBook] = notesTextarea.value;
+          localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
+        }
+      });
+
       // 更新笔记区域的箭头方向
       function updateNotesToggleIcon(isExpanded) {
         const icon = notesToggle.querySelector('.icon');
@@ -878,6 +901,18 @@
       // 处理键盘导航
       function handleKeyPress(event) {
         if (!book || !rendition) return;
+
+        // 检查笔记区域是否处于活动状态
+        if (isNotesActive) return;
+
+        // 检查是否有其他文本输入元素处于焦点状态
+        const activeElement = document.activeElement;
+        const isInputActive = activeElement.tagName === 'INPUT' ||
+                             activeElement.tagName === 'TEXTAREA' ||
+                             activeElement.isContentEditable;
+
+        // 如果有输入元素处于焦点状态，不处理键盘导航
+        if (isInputActive) return;
 
         // 只处理箭头键，不阻止默认行为
         if (event.key === 'ArrowLeft') {
