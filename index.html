@@ -583,12 +583,21 @@
               book.open(arrayBuffer)
                 .then(function() {
                 // 清空容器，确保没有残留内容
-                document.getElementById('epub-container').innerHTML = '';
+                const epubContainer = document.getElementById('epub-container');
+                console.log('epub-container元素状态:', epubContainer ? '存在' : '不存在');
+
+                if (epubContainer) {
+                  epubContainer.innerHTML = '';
+                  console.log('epub-container已清空');
+                } else {
+                  console.error('找不到epub-container元素，无法清空内容');
+                }
 
                 // 获取容器尺寸
                 const container = document.getElementById('epub-container');
-                const containerWidth = container.clientWidth;
-                const containerHeight = container.clientHeight;
+                const containerWidth = container ? container.clientWidth : 0;
+                const containerHeight = container ? container.clientHeight : 0;
+                console.log('容器尺寸:', containerWidth, 'x', containerHeight);
                 rendition = book.renderTo('epub-container', {
                   width: containerWidth,
                   height: containerHeight,
@@ -632,6 +641,8 @@
 
                   // 初始化显示
                   updatePages(startLocation);
+
+                  // 移除了重复的滚轮事件监听器设置，改为在rendered事件中添加
                 }).catch(error => {
                   console.error('位置信息处理错误:', error);
                 });
@@ -668,11 +679,15 @@
 
                 // 设置iframe的sandbox属性，允许脚本执行
                 setTimeout(function() {
-                  const iframe = document.querySelector('#epub-container iframe');
-                  if (iframe) {
-                    iframe.sandbox = 'allow-same-origin allow-scripts';
+                  try {
+                    const iframe = document.querySelector('#epub-container iframe');
+                    if (iframe) {
+                      iframe.sandbox = 'allow-same-origin allow-scripts';
+                    }
+                  } catch (e) {
+                    console.error('设置iframe sandbox时出错:', e);
                   }
-                }, 100);
+                }, 300);
 
                 // 检查渲染器是否正确创建
                 if (!rendition) {
@@ -688,7 +703,6 @@
                 // 添加位置变化事件监听
                 rendition.on('relocated', function(location) {
                   if (location && location.start) {
-                    // 尝试从当前位置获取位置索引
                     try {
                       const locationCfi = location.start.cfi;
                       const newLocation = book.locations.locationFromCfi(locationCfi);
@@ -701,12 +715,59 @@
                         }
                       }
                     } catch (e) {
-                      // 无法获取位置索引，忽略错误
+                      // 更新位置时出错，忽略
                     }
                   }
                 });
 
-                // 移除了调试用的事件监听器
+                // 添加内容加载事件监听器
+                rendition.on('rendered', function(section) {
+                  // 内容渲染后，添加滚轮事件监听器到新的内容
+                  setTimeout(function() {
+                    try {
+                      // 查找iframe
+                      const container = document.getElementById('epub-container');
+                      if (!container) return;
+
+                      const iframe = container.querySelector('iframe');
+                      if (!iframe) return;
+
+                      // 确保iframe已加载
+                      if (!iframe.contentDocument && !iframe.contentWindow) return;
+
+                      // 访问iframe的内容文档
+                      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                      if (!iframeDoc) return;
+
+                      // 设置sandbox属性
+                      iframe.sandbox = 'allow-same-origin allow-scripts';
+
+                      // 创建滚轮事件监听器
+                      const wheelListener = function(event) {
+                        // 防止事件冒泡和默认行为
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        // 设置滚动阈值和冷却时间
+                        const now = Date.now();
+                        if (now - (window.lastWheelTime || 0) < 150) return;
+                        window.lastWheelTime = now;
+
+                        // 根据滚动方向导航
+                        if (event.deltaY > 10) {
+                          navigateNext();
+                        } else if (event.deltaY < -10) {
+                          navigatePrev();
+                        }
+                      };
+
+                      // 添加监听器
+                      iframeDoc.addEventListener('wheel', wheelListener, { passive: false });
+                    } catch (e) {
+                      console.error('添加滚轮事件监听器时出错:', e);
+                    }
+                  }, 200);
+                });
 
                 // 不需要在这里显示书籍，因为我们会在生成位置信息后调用updatePages(0)
               })
@@ -742,21 +803,14 @@
           // 设置键盘导航
           document.addEventListener('keydown', handleKeyPress);
 
-          // 设置鼠标滚轮导航
-          document.getElementById('epub-container').addEventListener('wheel', handleMouseWheel);
-
           // 添加窗口大小调整事件监听器
           window.addEventListener('resize', handleResize);
-
-          // 移除了紧急导航按钮相关代码
 
         } catch (error) {
           console.error('Error in handleFile:', error);
           alert('Error loading EPUB: ' + error.message);
         }
       }
-
-      // 极简界面，移除了导航按钮事件
 
       // 处理键盘导航
       function handleKeyPress(event) {
@@ -771,42 +825,14 @@
         }
       }
 
-      // 处理鼠标滚轮导航 - 改进版
-      function handleMouseWheel(event) {
-        if (!book || !rendition) {
-          return;
-        }
-
-        // 防止事件冒泡和默认行为
-        event.preventDefault();
-        event.stopPropagation();
-
-        // 设置滚动阈值和冷却时间，防止过快翻页
-        const now = Date.now();
-        if (now - (window.lastWheelTime || 0) < 150) return; // 150ms冷却时间，更灵敏
-        window.lastWheelTime = now;
-
-        // 降低滚动阈值，使导航更灵敏
-        if (event.deltaY > 10) {
-          // 向下滚动，前进到下一页
-          navigateNext();
-        } else if (event.deltaY < -10) {
-          // 向上滚动，后退到上一页
-          navigatePrev();
-        }
-      }
-
       // 导航到上一页 - 使用ePub.js内置方法
       function navigatePrev() {
-        if (!book || !rendition) {
-          return;
-        }
+        if (!book || !rendition) return;
 
         // 使用rendition的prev方法导航到上一页
         rendition.prev().then(function() {
           // 导航成功后更新当前位置
           setTimeout(() => {
-            // 尝试从当前位置获取位置索引
             try {
               const location = rendition.location;
               if (location && location.start) {
@@ -823,22 +849,19 @@
               // 无法获取位置索引，忽略错误
             }
           }, 100);
-        }).catch(function(err) {
+        }).catch(function() {
           // 已经是第一页
         });
       }
 
       // 导航到下一页 - 使用ePub.js内置方法
       function navigateNext() {
-        if (!book || !rendition) {
-          return;
-        }
+        if (!book || !rendition) return;
 
         // 使用rendition的next方法导航到下一页
         rendition.next().then(function() {
           // 导航成功后更新当前位置
           setTimeout(() => {
-            // 尝试从当前位置获取位置索引
             try {
               const location = rendition.location;
               if (location && location.start) {
@@ -855,7 +878,7 @@
               // 无法获取位置索引，忽略错误
             }
           }, 100);
-        }).catch(function(err) {
+        }).catch(function() {
           // 已经是最后一页
         });
       }
@@ -900,10 +923,6 @@
           }
         }, 250); // 250ms的防抖动延迟
       }
-
-      // 移除了未使用的导航辅助函数
-
-      // 移除了调试按钮事件处理
     });
   </script>
 </body>
