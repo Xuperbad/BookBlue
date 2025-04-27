@@ -723,7 +723,7 @@
                   try {
                     const iframe = document.querySelector('#epub-container iframe');
                     if (iframe) {
-                      iframe.sandbox = 'allow-scripts';
+                      iframe.sandbox = 'allow-same-origin allow-scripts';
                     }
                   } catch (e) {
                     console.error('设置iframe sandbox时出错:', e);
@@ -783,8 +783,8 @@
                       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
                       if (!iframeDoc) return;
 
-                      // 设置sandbox属性，使用更安全的配置
-                      iframe.sandbox = 'allow-scripts';
+                      // 设置sandbox属性
+                      iframe.sandbox = 'allow-same-origin allow-scripts';
 
                       // 创建滚轮事件监听器
                       const wheelListener = function(event) {
