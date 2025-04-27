@@ -396,11 +396,6 @@
       let currentLocation = 0; // 当前位置
       let totalLocations = 0;  // 总位置数
 
-      // 调试函数
-      function debug(message) {
-        console.log(message);
-      }
-
       // 更新页面显示 - 全局函数
       function updatePages(startLocation) {
         // 确保位置在有效范围内
@@ -534,7 +529,7 @@
         // 如果库未加载完成，显示提示
         if (!window.librariesReady) {
           alert('Libraries are still loading. Please wait a moment and try again.');
-          debug('Error: Libraries not ready yet');
+          console.log('Error: Libraries not ready yet');
           return;
         }
 
@@ -583,7 +578,7 @@
 
         if (!window.librariesReady) {
           alert('Libraries are still loading. Please wait a moment and try again.');
-          debug('Error: Libraries not ready yet');
+          console.log('Error: Libraries not ready yet');
           return;
         }
 
