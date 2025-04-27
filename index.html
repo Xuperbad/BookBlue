@@ -396,6 +396,11 @@
       let currentLocation = 0; // 当前位置
       let totalLocations = 0;  // 总位置数
 
+      // 调试函数
+      function debug(message) {
+        console.log(message);
+      }
+
       // 更新页面显示 - 全局函数
       function updatePages(startLocation) {
         // 确保位置在有效范围内
@@ -496,14 +501,72 @@
         console.error('Error loading saved notes:', error);
       }
 
-      // 处理拖放事件
-      dropArea.addEventListener('dragover', function(event) {
+      // 处理拖放事件 - 简化版本
+      // 为整个文档添加拖放事件
+      document.addEventListener('dragover', function(event) {
+        event.preventDefault();
+
+        // 如果库未加载完成，不处理
+        if (!window.librariesReady) return;
+
+        // 显示拖放区域
+        if (dropArea.classList.contains('hidden')) {
+          dropArea.classList.remove('hidden');
+        }
+
+        // 设置样式
+        dropArea.style.borderColor = '#4a4238';
+        dropArea.style.backgroundColor = 'rgba(74, 66, 56, 0.1)';
+      });
+
+      document.addEventListener('dragleave', function(event) {
+        // 如果库未加载完成，不处理
+        if (!window.librariesReady) return;
+
+        // 重置样式
+        dropArea.style.borderColor = '#ccc';
+        dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+      });
+
+      document.addEventListener('drop', function(event) {
+        event.preventDefault();
+
+        // 如果库未加载完成，显示提示
         if (!window.librariesReady) {
-          event.preventDefault();
+          alert('Libraries are still loading. Please wait a moment and try again.');
+          debug('Error: Libraries not ready yet');
           return;
         }
 
+        // 重置样式
+        dropArea.style.borderColor = '#ccc';
+        dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+
+        try {
+          // 获取拖放的文件
+          const file = event.dataTransfer.files[0];
+          if (file && file.name.toLowerCase().endsWith('.epub')) {
+            // 使用setTimeout延迟执行，给浏览器时间处理UI更新
+            setTimeout(function() {
+              try {
+                // 处理新文件
+                handleFile(file);
+              } catch (error) {
+                console.error('处理文件时出错:', error);
+              }
+            }, 100);
+          }
+        } catch (error) {
+          console.error('处理拖放事件时出错:', error);
+        }
+      });
+
+      // 为dropArea也添加事件监听器（确保兼容性）
+      dropArea.addEventListener('dragover', function(event) {
         event.preventDefault();
+
+        if (!window.librariesReady) return;
+
         dropArea.style.borderColor = '#4a4238';
         dropArea.style.backgroundColor = 'rgba(74, 66, 56, 0.1)';
       });
@@ -527,9 +590,14 @@
         dropArea.style.borderColor = '#ccc';
         dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
 
-        const file = event.dataTransfer.files[0];
-        if (file) {
-          handleFile(file);
+        try {
+          const file = event.dataTransfer.files[0];
+          if (file && file.name.toLowerCase().endsWith('.epub')) {
+            // 处理新文件
+            handleFile(file);
+          }
+        } catch (error) {
+          console.error('处理拖放事件时出错:', error);
         }
       });
 
@@ -656,6 +724,54 @@
       // 页面加载时恢复笔记区域状态
       restoreNotesAreaState();
 
+      // 卸载当前书籍 - 极简版本
+      function unloadCurrentBook() {
+        try {
+          // 保存当前笔记
+          if (currentBook && notesTextarea) {
+            currentNotes[currentBook] = notesTextarea.value;
+            localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
+          }
+
+          // 保存当前阅读进度
+          if (currentBook && currentLocation >= 0) {
+            localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+          }
+
+          // 清空容器 - 这是最重要的部分
+          const epubContainer = document.getElementById('epub-container');
+          if (epubContainer) {
+            epubContainer.innerHTML = '';
+          }
+
+          // 简单地重置变量，不尝试清理对象
+          book = null;
+          rendition = null;
+
+          // 强制垃圾回收（尽管这不是直接的方法）
+          if (window.gc) {
+            window.gc();
+          }
+
+        } catch (e) {
+          console.error('卸载书籍时出错:', e);
+
+          // 即使出错，也要确保容器被清空
+          try {
+            const epubContainer = document.getElementById('epub-container');
+            if (epubContainer) {
+              epubContainer.innerHTML = '';
+            }
+
+            // 重置变量
+            book = null;
+            rendition = null;
+          } catch (innerError) {
+            console.error('清空容器时出错:', innerError);
+          }
+        }
+      }
+
       // 处理文件
       function handleFile(file) {
         // 检查库是否已加载
@@ -669,6 +785,9 @@
           alert('Please upload an EPUB file.');
           return;
         }
+
+        // 如果当前已有书籍加载，先卸载它
+        unloadCurrentBook();
 
         // 设置当前书籍
         currentBook = file.name;
@@ -848,6 +967,40 @@
 
                       // 设置sandbox属性
                       iframe.sandbox = 'allow-same-origin allow-scripts';
+
+                      // 为iframe内部添加拖放事件处理
+                      // 阻止默认行为，防止触发浏览器的另存为对话框
+                      iframeDoc.addEventListener('dragover', function(e) {
+                        e.preventDefault();
+
+                        // 显示拖放区域
+                        if (dropArea && dropArea.classList.contains('hidden')) {
+                          dropArea.classList.remove('hidden');
+                        }
+                      });
+
+                      // 处理iframe内部的文件拖放
+                      iframeDoc.addEventListener('drop', function(e) {
+                        e.preventDefault();
+
+                        try {
+                          // 获取拖放的文件并处理
+                          const file = e.dataTransfer.files[0];
+                          if (file && file.name.toLowerCase().endsWith('.epub')) {
+                            // 使用setTimeout延迟执行，给浏览器时间处理UI更新
+                            setTimeout(function() {
+                              try {
+                                // 处理新文件
+                                handleFile(file);
+                              } catch (error) {
+                                console.error('处理文件时出错:', error);
+                              }
+                            }, 100);
+                          }
+                        } catch (error) {
+                          console.error('处理拖放事件时出错:', error);
+                        }
+                      });
 
                       // 创建滚轮事件监听器
                       const wheelListener = function(event) {
