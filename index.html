@@ -263,6 +263,17 @@
       z-index: 2;
     }
 
+    /* 页码显示 - 极简风格，只有数字 */
+    .page-counter {
+      position: absolute;
+      bottom: 15px;
+      right: 15px;
+      font-size: 14px;
+      color: #4a4238;
+      z-index: 10;
+      user-select: none;
+    }
+
     .plus-container {
       width: 80px;
       height: 80px;
@@ -335,6 +346,9 @@
 
       <!-- 加载指示器 -->
       <div id="loading-indicator" class="loading-indicator">Loading libraries</div>
+
+      <!-- 页码显示 -->
+      <div id="page-counter" class="page-counter"></div>
 
       <!-- 移除了紧急翻页按钮 -->
 
@@ -456,6 +470,13 @@
           const pageInfoElement = document.getElementById('page-info');
           if (pageInfoElement) {
             pageInfoElement.textContent = progressInfo;
+          }
+
+          // 更新右下角页码显示
+          const pageCounterElement = document.getElementById('page-counter');
+          if (pageCounterElement) {
+            // 简洁显示：当前页/总页数
+            pageCounterElement.textContent = `${currentLocation+1}/${totalLocations}`;
           }
         } catch (error) {
           console.error('更新进度信息出错:', error);
