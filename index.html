@@ -942,9 +942,13 @@
           return;
         }
 
-        // 防抖动处理，避免频繁调整大小时多次渲染
-        clearTimeout(window.resizeTimer);
-        window.resizeTimer = setTimeout(function() {
+        // 使用节流（Throttling）技术，确保函数在指定时间间隔内最多执行一次
+        const now = Date.now();
+
+        // 如果是第一次调用，或者距离上次执行已经超过了节流时间间隔
+        if (!window.lastResizeTime || now - window.lastResizeTime >= 50) { // 50ms的节流间隔
+          window.lastResizeTime = now;
+
           // 获取新的容器尺寸
           const container = document.getElementById('epub-container');
           const newWidth = container.clientWidth;
@@ -974,7 +978,29 @@
             rendition.resize(newWidth, newHeight);
             rendition.display(cfi);
           }
-        }, 250); // 250ms的防抖动延迟
+        }
+
+        // 在拖动结束后进行一次完整渲染
+        // 这是为了确保在拖动结束后内容完全正确
+        if (window.finalResizeTimer) {
+          clearTimeout(window.finalResizeTimer);
+        }
+        window.finalResizeTimer = setTimeout(function() {
+          const container = document.getElementById('epub-container');
+          const newWidth = container.clientWidth;
+          const newHeight = container.clientHeight;
+
+          try {
+            const location = rendition.location;
+            if (location && location.start) {
+              const currentCfi = location.start.cfi;
+              rendition.resize(newWidth, newHeight);
+              rendition.display(currentCfi);
+            }
+          } catch (error) {
+            // 忽略错误
+          }
+        }, 300); // 拖动结束后300ms进行最终渲染
       }
     });
   </script>
