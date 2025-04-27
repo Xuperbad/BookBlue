@@ -197,7 +197,7 @@
 
     #epub-container {
       width: 100%;
-      height: 100%;
+      height: calc(100% - 30px); /* 减少高度，为页码留出空间 */
       position: relative;
       overflow: hidden;
     }
@@ -266,7 +266,7 @@
     /* 页码显示 - 极简风格，只有数字 */
     .page-counter {
       position: absolute;
-      bottom: 15px;
+      bottom: 8px;
       right: 15px;
       font-size: 14px;
       color: #4a4238;
