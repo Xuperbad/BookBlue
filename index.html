@@ -723,7 +723,7 @@
                   try {
                     const iframe = document.querySelector('#epub-container iframe');
                     if (iframe) {
-                      iframe.sandbox = 'allow-same-origin allow-scripts';
+                      iframe.sandbox = 'allow-scripts';
                     }
                   } catch (e) {
                     console.error('设置iframe sandbox时出错:', e);
@@ -737,8 +737,8 @@
 
                 // 监听但不处理点击事件
                 rendition.on('click', function(event) {
-                  // 阻止默认行为，不进行导航
-                  event.preventDefault();
+                  // 不再尝试阻止默认行为，而是使用自定义处理
+                  // 这里可以添加自定义点击处理逻辑，如显示菜单等
                 });
 
                 // 添加位置变化事件监听
@@ -783,20 +783,12 @@
                       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
                       if (!iframeDoc) return;
 
-                      // 设置sandbox属性
-                      iframe.sandbox = 'allow-same-origin allow-scripts';
+                      // 设置sandbox属性，使用更安全的配置
+                      iframe.sandbox = 'allow-scripts';
 
                       // 创建滚轮事件监听器
                       const wheelListener = function(event) {
-                        try {
-                          // 尝试防止默认行为
-                          if (event.cancelable) {
-                            event.preventDefault();
-                          }
-                          event.stopPropagation();
-                        } catch (e) {
-                          // 忽略preventDefault错误
-                        }
+                        // 不再尝试阻止默认行为，而是直接处理滚动
 
                         // 设置滚动阈值和冷却时间
                         const now = Date.now();
@@ -813,8 +805,8 @@
                         }
                       };
 
-                      // 添加监听器
-                      iframeDoc.addEventListener('wheel', wheelListener, { passive: false });
+                      // 添加监听器，使用passive: true以避免警告
+                      iframeDoc.addEventListener('wheel', wheelListener, { passive: true });
                     } catch (e) {
                       console.error('添加滚轮事件监听器时出错:', e);
                     }
@@ -868,11 +860,10 @@
       function handleKeyPress(event) {
         if (!book || !rendition) return;
 
+        // 只处理箭头键，不阻止默认行为
         if (event.key === 'ArrowLeft') {
-          event.preventDefault(); // 阻止默认行为
           window.navigatePrev();
         } else if (event.key === 'ArrowRight') {
-          event.preventDefault(); // 阻止默认行为
           window.navigateNext();
         }
       }
