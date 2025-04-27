@@ -396,6 +396,9 @@
 
         // 显示页面
         rendition.display(cfi).then(() => {
+          // 更新进度显示
+          updateProgressInfo();
+
           // 保存阅读进度
           if (currentBook) {
             localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
@@ -404,6 +407,63 @@
           console.error('页面显示错误:', error);
         });
       }
+
+      // 更新进度信息显示
+      function updateProgressInfo() {
+        if (!book || !rendition) return;
+
+        try {
+          // 计算百分比进度
+          const percentage = Math.floor((currentLocation / totalLocations) * 100);
+
+          // 构建进度信息
+          let progressInfo = `${percentage}%`;
+
+          // 添加位置信息
+          progressInfo += ` | 位置: ${currentLocation+1}/${totalLocations}`;
+
+          // 尝试获取当前章节信息
+          try {
+            const currentLoc = rendition.location;
+            if (currentLoc && currentLoc.start) {
+              // 获取章节路径
+              const chapter = currentLoc.start.href || '';
+
+              // 从章节路径中提取章节名称
+              let chapterName = chapter.split('/').pop().replace('.html', '');
+
+              // 尝试清理章节名称（移除数字前缀等）
+              chapterName = chapterName.replace(/^\d+[\._-]?/, '');
+              chapterName = chapterName.replace(/_/g, ' ');
+
+              if (chapterName) {
+                progressInfo += ` | ${chapterName}`;
+              }
+
+              // 尝试获取章节标题
+              if (currentLoc.start.index) {
+                const spineItem = book.spine.get(currentLoc.start.index);
+                if (spineItem && spineItem.title) {
+                  progressInfo += ` (${spineItem.title})`;
+                }
+              }
+            }
+          } catch (e) {
+            // 忽略章节获取错误
+          }
+
+          // 更新页面信息显示
+          const pageInfoElement = document.getElementById('page-info');
+          if (pageInfoElement) {
+            pageInfoElement.textContent = progressInfo;
+          }
+        } catch (error) {
+          console.error('更新进度信息出错:', error);
+        }
+      }
+
+      // 将updateProgressInfo函数添加到window对象，使其在所有作用域中可用
+      window.updateProgressInfo = updateProgressInfo;
 
       // 加载保存的笔记
       try {
@@ -662,21 +722,6 @@
                   }
                 }
 
-                // 翻页函数
-                function navigatePrev() {
-                  if (currentLocation > 0) {
-                    currentLocation -= 1;
-                    updatePages(currentLocation);
-                  }
-                }
-
-                function navigateNext() {
-                  if (currentLocation + 1 < totalLocations) {
-                    currentLocation += 1;
-                    updatePages(currentLocation);
-                  }
-                }
-
                 // 设置iframe的sandbox属性，允许脚本执行
                 setTimeout(function() {
                   try {
@@ -708,6 +753,9 @@
                       const newLocation = book.locations.locationFromCfi(locationCfi);
                       if (newLocation !== currentLocation) {
                         currentLocation = newLocation;
+
+                        // 更新进度显示
+                        window.updateProgressInfo();
 
                         // 保存阅读进度
                         if (currentBook) {
@@ -744,9 +792,15 @@
 
                       // 创建滚轮事件监听器
                       const wheelListener = function(event) {
-                        // 防止事件冒泡和默认行为
-                        event.preventDefault();
-                        event.stopPropagation();
+                        try {
+                          // 尝试防止默认行为
+                          if (event.cancelable) {
+                            event.preventDefault();
+                          }
+                          event.stopPropagation();
+                        } catch (e) {
+                          // 忽略preventDefault错误
+                        }
 
                         // 设置滚动阈值和冷却时间
                         const now = Date.now();
@@ -755,9 +809,13 @@
 
                         // 根据滚动方向导航
                         if (event.deltaY > 10) {
-                          navigateNext();
+                          // 向下滚动，前进到下一页
+                          console.log('向下滚动，尝试导航到下一页');
+                          window.navigateNext(); // 使用全局函数
                         } else if (event.deltaY < -10) {
-                          navigatePrev();
+                          // 向上滚动，后退到上一页
+                          console.log('向上滚动，尝试导航到上一页');
+                          window.navigatePrev(); // 使用全局函数
                         }
                       };
 
@@ -818,19 +876,26 @@
 
         if (event.key === 'ArrowLeft') {
           event.preventDefault(); // 阻止默认行为
-          navigatePrev();
+          console.log('键盘左箭头按下，尝试导航到上一页');
+          window.navigatePrev(); // 使用全局函数
         } else if (event.key === 'ArrowRight') {
           event.preventDefault(); // 阻止默认行为
-          navigateNext();
+          console.log('键盘右箭头按下，尝试导航到下一页');
+          window.navigateNext(); // 使用全局函数
         }
       }
 
       // 导航到上一页 - 使用ePub.js内置方法
       function navigatePrev() {
-        if (!book || !rendition) return;
+        console.log('全局navigatePrev被调用');
+        if (!book || !rendition) {
+          console.log('book或rendition未初始化，无法导航');
+          return;
+        }
 
         // 使用rendition的prev方法导航到上一页
         rendition.prev().then(function() {
+          console.log('导航到上一页成功');
           // 导航成功后更新当前位置
           setTimeout(() => {
             try {
@@ -840,26 +905,34 @@
                 const newLocation = book.locations.locationFromCfi(locationCfi);
                 currentLocation = newLocation;
 
+                // 更新进度显示
+                window.updateProgressInfo();
+
                 // 保存阅读进度
                 if (currentBook) {
                   localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
                 }
               }
             } catch (e) {
-              // 无法获取位置索引，忽略错误
+              console.error('更新位置时出错:', e);
             }
           }, 100);
-        }).catch(function() {
-          // 已经是第一页
+        }).catch(function(err) {
+          console.log('导航到上一页失败:', err);
         });
       }
 
       // 导航到下一页 - 使用ePub.js内置方法
       function navigateNext() {
-        if (!book || !rendition) return;
+        console.log('全局navigateNext被调用');
+        if (!book || !rendition) {
+          console.log('book或rendition未初始化，无法导航');
+          return;
+        }
 
         // 使用rendition的next方法导航到下一页
         rendition.next().then(function() {
+          console.log('导航到下一页成功');
           // 导航成功后更新当前位置
           setTimeout(() => {
             try {
@@ -869,19 +942,26 @@
                 const newLocation = book.locations.locationFromCfi(locationCfi);
                 currentLocation = newLocation;
 
+                // 更新进度显示
+                window.updateProgressInfo();
+
                 // 保存阅读进度
                 if (currentBook) {
                   localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
                 }
               }
             } catch (e) {
-              // 无法获取位置索引，忽略错误
+              console.error('更新位置时出错:', e);
             }
           }, 100);
-        }).catch(function() {
-          // 已经是最后一页
+        }).catch(function(err) {
+          console.log('导航到下一页失败:', err);
         });
       }
+
+      // 将导航函数添加到window对象，使其在所有作用域中可用
+      window.navigatePrev = navigatePrev;
+      window.navigateNext = navigateNext;
 
       // 处理窗口大小调整
       function handleResize() {
