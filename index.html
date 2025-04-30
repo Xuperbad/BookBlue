@@ -99,6 +99,37 @@
       overflow: hidden;
     }
 
+    /* Dropbox 授权按钮样式 */
+    #dropbox-auth-button {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      padding: 5px 10px;
+      background-color: #0061fe;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    /* Dropbox URL 显示区域样式 */
+    #dropbox-auth-url {
+      position: absolute;
+      top: 45px;
+      left: 10px;
+      z-index: 1000;
+      max-width: 500px;
+      padding: 5px;
+      background-color: rgba(255, 255, 255, 0.9);
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 10px;
+      word-break: break-all;
+      display: none;
+    }
+
     .container {
       display: flex;
       height: 100vh;
@@ -339,6 +370,12 @@
   </style>
 </head>
 <body>
+  <!-- Dropbox 授权按钮 -->
+  <button id="dropbox-auth-button">连接 Dropbox</button>
+
+  <!-- Dropbox 授权 URL 显示区域 -->
+  <div id="dropbox-auth-url"></div>
+
   <div class="container">
     <div class="reader-area">
       <!-- 单一容器用于ePub.js渲染 -->
@@ -372,8 +409,103 @@
   </div>
 
   <script>
+    // Dropbox 配置
+    // 注意：如果您要在其他设备上使用，请修改以下配置
+    const dropboxConfig = {
+      // 您的 Dropbox 应用密钥 (https://www.dropbox.com/developers/apps)
+      clientId: '6swvs08dx2uakdi',
+
+      // 重定向 URI - 默认使用当前页面的 origin (协议+主机名+端口)
+      // 您也可以手动设置为固定值，如 'http://localhost:8000'
+      get redirectUri() {
+        return window.location.origin;
+      }
+    };
+
+    // Dropbox 授权函数
+    async function handleDropboxAuth() {
+      console.log('开始 Dropbox 授权流程...');
+
+      try {
+        // 获取重定向 URL
+        const redirectUrl = dropboxConfig.redirectUri;
+        console.log(`使用重定向 URL: ${redirectUrl}`);
+
+        // 生成随机状态参数，防止 CSRF 攻击
+        const state = Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('dropboxAuthState', state);
+
+        // 构建授权 URL
+        const authUrl = new URL('https://www.dropbox.com/oauth2/authorize');
+        authUrl.searchParams.append('client_id', dropboxConfig.clientId);
+        authUrl.searchParams.append('response_type', 'code');
+        authUrl.searchParams.append('redirect_uri', redirectUrl);
+        authUrl.searchParams.append('state', state);
+        authUrl.searchParams.append('scope', 'files.content.read files.content.write files.metadata.read');
+        authUrl.searchParams.append('token_access_type', 'offline');
+
+        // 显示授权 URL
+        const authUrlString = authUrl.toString();
+        const urlDisplay = document.getElementById('dropbox-auth-url');
+        urlDisplay.textContent = authUrlString;
+        urlDisplay.style.display = 'block';
+        console.log(`授权 URL: ${authUrlString}`);
+
+        // 不自动跳转，让用户可以看到 URL
+        // window.location.href = authUrlString;
+      } catch (error) {
+        console.error('生成授权 URL 时出错:', error);
+      }
+    }
+
+    // 处理授权重定向
+    function handleDropboxRedirect() {
+      console.log('检查 URL 中是否有授权码...');
+
+      // 检查 URL 中是否包含授权码
+      const urlParams = new URLSearchParams(window.location.search);
+      const authCode = urlParams.get('code');
+      const state = urlParams.get('state');
+      const error = urlParams.get('error');
+
+      // 检查是否有错误
+      if (error) {
+        console.log(`授权失败: ${error}`);
+        return;
+      }
+
+      // 验证状态参数
+      const savedState = localStorage.getItem('dropboxAuthState');
+      if (state && savedState && state !== savedState) {
+        console.log('状态参数不匹配，可能是 CSRF 攻击');
+        return;
+      }
+
+      if (authCode) {
+        console.log('从 URL 中获取到授权码');
+        console.log(`授权码: ${authCode}`);
+
+        // 清除 URL 中的授权码
+        window.history.replaceState(null, null, window.location.pathname);
+
+        // 在实际应用中，这里应该发送请求到服务器，用授权码交换访问令牌
+        console.log('在实际应用中，这里应该用授权码交换访问令牌');
+
+        // 清除状态参数
+        localStorage.removeItem('dropboxAuthState');
+      }
+    }
 
     document.addEventListener('DOMContentLoaded', function() {
+      // 绑定 Dropbox 授权按钮事件
+      const dropboxAuthButton = document.getElementById('dropbox-auth-button');
+      if (dropboxAuthButton) {
+        dropboxAuthButton.addEventListener('click', handleDropboxAuth);
+      }
+
+      // 检查 URL 中是否有授权码
+      handleDropboxRedirect();
+
       // 检查ePub.js是否正确加载
       if (typeof ePub === 'undefined') {
         alert('Error: ePub.js library could not be loaded. Please check your internet connection and try again.');
