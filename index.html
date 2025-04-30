@@ -114,21 +114,7 @@
       font-size: 12px;
     }
 
-    /* Dropbox URL 显示区域样式 */
-    #dropbox-auth-url {
-      position: absolute;
-      top: 45px;
-      left: 10px;
-      z-index: 1000;
-      max-width: 500px;
-      padding: 5px;
-      background-color: rgba(255, 255, 255, 0.9);
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 10px;
-      word-break: break-all;
-      display: none;
-    }
+
 
     .container {
       display: flex;
@@ -373,9 +359,6 @@
   <!-- Dropbox 授权按钮 -->
   <button id="dropbox-auth-button">连接 Dropbox</button>
 
-  <!-- Dropbox 授权 URL 显示区域 -->
-  <div id="dropbox-auth-url"></div>
-
   <div class="container">
     <div class="reader-area">
       <!-- 单一容器用于ePub.js渲染 -->
@@ -415,6 +398,10 @@
       // 您的 Dropbox 应用密钥 (https://www.dropbox.com/developers/apps)
       clientId: '6swvs08dx2uakdi',
 
+      // 您的 Dropbox 应用密钥对应的密钥
+      // 注意：这是敏感信息，生产环境中不应该硬编码
+      clientSecret: 'bjyje0f7g4wrlg6',  // 请从 Dropbox 开发者控制台获取并填写
+
       // 重定向 URI - 默认使用当前页面的 origin (协议+主机名+端口)
       // 您也可以手动设置为固定值，如 'http://localhost:8000'
       get redirectUri() {
@@ -425,6 +412,12 @@
     // Dropbox 授权函数
     async function handleDropboxAuth() {
       console.log('开始 Dropbox 授权流程...');
+
+      // 检查是否设置了 client_secret
+      if (!dropboxConfig.clientSecret) {
+        alert('请先设置 Dropbox 应用密钥对应的密钥（client_secret）。\n\n1. 登录 Dropbox 开发者控制台 (https://www.dropbox.com/developers/apps)\n2. 选择您的应用\n3. 在"App secret"部分找到密钥\n4. 将密钥复制到代码中的 clientSecret 字段');
+        return;
+      }
 
       try {
         // 获取重定向 URL
@@ -444,15 +437,12 @@
         authUrl.searchParams.append('scope', 'files.content.read files.content.write files.metadata.read');
         authUrl.searchParams.append('token_access_type', 'offline');
 
-        // 显示授权 URL
+        // 直接跳转到授权页面
         const authUrlString = authUrl.toString();
-        const urlDisplay = document.getElementById('dropbox-auth-url');
-        urlDisplay.textContent = authUrlString;
-        urlDisplay.style.display = 'block';
         console.log(`授权 URL: ${authUrlString}`);
 
-        // 不自动跳转，让用户可以看到 URL
-        // window.location.href = authUrlString;
+        // 跳转到 Dropbox 授权页面
+        window.location.href = authUrlString;
       } catch (error) {
         console.error('生成授权 URL 时出错:', error);
       }
@@ -467,10 +457,15 @@
       const authCode = urlParams.get('code');
       const state = urlParams.get('state');
       const error = urlParams.get('error');
+      const errorDescription = urlParams.get('error_description');
 
       // 检查是否有错误
       if (error) {
         console.log(`授权失败: ${error}`);
+        if (errorDescription) {
+          console.log(`错误描述: ${errorDescription}`);
+        }
+        alert(`Dropbox 授权失败: ${error}${errorDescription ? '\n' + errorDescription : ''}`);
         return;
       }
 
@@ -478,22 +473,151 @@
       const savedState = localStorage.getItem('dropboxAuthState');
       if (state && savedState && state !== savedState) {
         console.log('状态参数不匹配，可能是 CSRF 攻击');
+        alert('安全验证失败：状态参数不匹配');
         return;
       }
 
       if (authCode) {
         console.log('从 URL 中获取到授权码');
-        console.log(`授权码: ${authCode}`);
+        console.log(`授权码: ${authCode.substring(0, 5)}...${authCode.substring(authCode.length - 5)}`);
 
         // 清除 URL 中的授权码
         window.history.replaceState(null, null, window.location.pathname);
 
-        // 在实际应用中，这里应该发送请求到服务器，用授权码交换访问令牌
-        console.log('在实际应用中，这里应该用授权码交换访问令牌');
+        // 使用授权码交换访问令牌
+        exchangeCodeForToken(authCode);
 
         // 清除状态参数
         localStorage.removeItem('dropboxAuthState');
       }
+    }
+
+    // 使用授权码交换访问令牌
+    async function exchangeCodeForToken(code) {
+      console.log('使用授权码交换访问令牌...');
+
+      try {
+        // 准备请求数据
+        const data = new URLSearchParams();
+        data.append('code', code);
+        data.append('grant_type', 'authorization_code');
+        data.append('client_id', dropboxConfig.clientId);
+        data.append('redirect_uri', dropboxConfig.redirectUri);
+
+        // 添加 client_secret 参数（如果有）
+        if (dropboxConfig.clientSecret) {
+          data.append('client_secret', dropboxConfig.clientSecret);
+        } else {
+          console.warn('警告: 缺少 client_secret，这可能导致令牌请求失败');
+          alert('请在代码中设置 Dropbox 应用密钥对应的密钥（client_secret）。\n\n您可以在 Dropbox 开发者控制台中找到它。');
+          return;
+        }
+
+        console.log('发送令牌请求...');
+
+        // 发送请求
+        const response = await fetch('https://api.dropboxapi.com/oauth2/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: data
+        });
+
+        console.log(`令牌响应状态: ${response.status}`);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log(`获取令牌失败: ${errorText}`);
+          alert(`获取访问令牌失败 (${response.status}): ${errorText}`);
+          return;
+        }
+
+        // 解析响应
+        const result = await response.json();
+        console.log('成功获取访问令牌');
+
+        const accessToken = result.access_token;
+        const refreshToken = result.refresh_token;
+        const expiresIn = result.expires_in;
+        const tokenType = result.token_type;
+
+        console.log(`访问令牌: ${accessToken.substring(0, 5)}...${accessToken.substring(accessToken.length - 5)}`);
+        if (refreshToken) {
+          console.log(`刷新令牌: ${refreshToken.substring(0, 5)}...${refreshToken.substring(refreshToken.length - 5)}`);
+        }
+        console.log(`过期时间: ${expiresIn}秒`);
+        console.log(`令牌类型: ${tokenType}`);
+
+        // 保存令牌
+        localStorage.setItem('dropboxAccessToken', accessToken);
+        if (refreshToken) {
+          localStorage.setItem('dropboxRefreshToken', refreshToken);
+        }
+
+        // 保存令牌获取时间和过期时间
+        const now = new Date().getTime();
+        localStorage.setItem('dropboxTokenTime', now);
+        if (expiresIn) {
+          const expiryTime = now + (parseInt(expiresIn) * 1000);
+          localStorage.setItem('dropboxTokenExpiry', expiryTime);
+          console.log(`令牌将在 ${new Date(expiryTime).toLocaleString()} 过期`);
+        }
+
+        // 更新 UI 状态
+        updateDropboxAuthUI(true);
+
+        // 显示成功消息
+        alert('成功连接到 Dropbox！');
+
+      } catch (error) {
+        console.error('交换令牌时出错:', error);
+        alert(`获取访问令牌时出错: ${error.message}`);
+      }
+    }
+
+    // 更新 Dropbox 授权 UI
+    function updateDropboxAuthUI(isAuthorized) {
+      const authButton = document.getElementById('dropbox-auth-button');
+      if (authButton) {
+        if (isAuthorized) {
+          authButton.textContent = '已连接 Dropbox';
+          authButton.style.backgroundColor = '#4caf50';
+        } else {
+          authButton.textContent = '连接 Dropbox';
+          authButton.style.backgroundColor = '#0061fe';
+        }
+      }
+    }
+
+    // 检查 Dropbox 授权状态
+    function checkDropboxAuthStatus() {
+      const accessToken = localStorage.getItem('dropboxAccessToken');
+      const tokenExpiry = localStorage.getItem('dropboxTokenExpiry');
+
+      if (accessToken) {
+        // 检查令牌是否过期
+        if (tokenExpiry) {
+          const now = new Date().getTime();
+          if (now < parseInt(tokenExpiry)) {
+            console.log('Dropbox 访问令牌有效');
+            updateDropboxAuthUI(true);
+            return true;
+          } else {
+            console.log('Dropbox 访问令牌已过期');
+            // 这里可以添加刷新令牌的逻辑
+          }
+        } else {
+          // 没有过期时间信息，假设令牌有效
+          console.log('Dropbox 访问令牌存在（无过期信息）');
+          updateDropboxAuthUI(true);
+          return true;
+        }
+      }
+
+      console.log('未连接 Dropbox 或令牌已过期');
+      updateDropboxAuthUI(false);
+      return false;
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -505,6 +629,9 @@
 
       // 检查 URL 中是否有授权码
       handleDropboxRedirect();
+
+      // 检查 Dropbox 授权状态并更新 UI
+      checkDropboxAuthStatus();
 
       // 检查ePub.js是否正确加载
       if (typeof ePub === 'undefined') {
