@@ -361,14 +361,14 @@
       left: 0;
       width: 100%;
       height: 8px;
-      background-color: rgba(74, 66, 56, 0.1);
+      background-color: transparent;
       z-index: 1000;
       cursor: pointer;
       transition: background-color 0.3s ease;
     }
 
     .drawer-trigger:hover {
-      background-color: rgba(74, 66, 56, 0.2);
+      background-color: rgba(74, 66, 56, 0.1);
     }
 
     .trigger-indicator {
@@ -1825,6 +1825,18 @@
         booksContainer.addEventListener('mouseleave', function() {
           isDragging = false;
         });
+
+        // 添加鼠标滚轮事件支持
+        booksContainer.addEventListener('wheel', function(e) {
+          e.preventDefault(); // 阻止默认的垂直滚动
+
+          // 使用deltaY进行水平滚动
+          // 如果按住Shift键，则使用deltaX
+          const scrollAmount = e.shiftKey ? e.deltaX : e.deltaY;
+
+          // 滚动容器
+          booksContainer.scrollLeft += scrollAmount;
+        }, { passive: false }); // passive: false 允许我们调用 preventDefault()
 
         // 触摸事件支持
         booksContainer.addEventListener('touchstart', function(e) {
