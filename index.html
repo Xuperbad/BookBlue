@@ -70,6 +70,62 @@
       }
     }
 
+    // 清除测试数据
+    function clearTestData() {
+      // 检查是否存在测试数据
+      const activityData = localStorage.getItem('reading-activity-data');
+      const finishedBooks = localStorage.getItem('finished-books');
+
+      if (activityData) {
+        try {
+          const data = JSON.parse(activityData);
+          // 检查是否包含测试书籍
+          let hasTestData = false;
+
+          for (const dateStr in data) {
+            for (const bookName in data[dateStr].books) {
+              if (bookName.startsWith('测试书籍')) {
+                hasTestData = true;
+                break;
+              }
+            }
+            if (hasTestData) break;
+          }
+
+          // 如果包含测试数据，清除
+          if (hasTestData) {
+            console.log('清除阅读活动测试数据');
+            localStorage.removeItem('reading-activity-data');
+          }
+        } catch (e) {
+          console.error('解析阅读活动数据失败:', e);
+        }
+      }
+
+      if (finishedBooks) {
+        try {
+          const books = JSON.parse(finishedBooks);
+          // 检查是否包含测试书籍
+          let hasTestData = false;
+
+          for (const book of books) {
+            if (book.startsWith('测试书籍')) {
+              hasTestData = true;
+              break;
+            }
+          }
+
+          // 如果包含测试数据，清除
+          if (hasTestData) {
+            console.log('清除已读完书籍测试数据');
+            localStorage.removeItem('finished-books');
+          }
+        } catch (e) {
+          console.error('解析已读完书籍数据失败:', e);
+        }
+      }
+    }
+
     // 页面加载完成后检查库
     window.addEventListener('load', function() {
       if (!checkLibraries()) {
@@ -83,7 +139,58 @@
           }
         }, 5000);
       }
+
+      // 清除测试数据
+      clearTestData();
+
+      // 初始化阅读追踪
+      readingTracker.init();
+
+      // 初始化书籍区域拖动滚动功能
+      initDragToScroll();
     });
+
+    // 初始化拖动滚动功能
+    function initDragToScroll() {
+      const booksContainer = document.querySelector('.books-container');
+      if (!booksContainer) return;
+
+      let isDown = false;
+      let startX;
+      let scrollLeft;
+
+      // 鼠标拖动滚动
+      booksContainer.addEventListener('mousedown', (e) => {
+        isDown = true;
+        booksContainer.classList.add('active');
+        startX = e.pageX - booksContainer.offsetLeft;
+        scrollLeft = booksContainer.scrollLeft;
+      });
+
+      booksContainer.addEventListener('mouseleave', () => {
+        isDown = false;
+        booksContainer.classList.remove('active');
+      });
+
+      booksContainer.addEventListener('mouseup', () => {
+        isDown = false;
+        booksContainer.classList.remove('active');
+      });
+
+      booksContainer.addEventListener('mousemove', (e) => {
+        if (!isDown) return;
+        e.preventDefault();
+        const x = e.pageX - booksContainer.offsetLeft;
+        const walk = (x - startX) * 2; // 滚动速度
+        booksContainer.scrollLeft = scrollLeft - walk;
+      });
+
+      // 鼠标滚轮滚动 - 只应用于书籍容器
+      booksContainer.addEventListener('wheel', (e) => {
+        e.preventDefault(); // 阻止默认的垂直滚动
+        booksContainer.scrollLeft += e.deltaY; // 使用垂直滚动量进行水平滚动
+      }, { passive: false }); // passive: false 允许我们阻止默认行为
+    }
   </script>
   <style>
     * {
@@ -456,20 +563,35 @@
     /* Dropbox 书籍容器 */
     .dropbox-books-container {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       height: 100%;
       width: 100%;
       padding: 0 20px;
-      overflow-x: auto; /* 只允许横向滚动 */
+      overflow: hidden; /* 禁止容器本身滚动 */
+      user-select: none; /* 防止文本选择，便于拖动 */
+    }
+
+    /* 书籍容器 */
+    .books-container {
+      display: flex;
+      flex: 1;
+      height: 100%;
+      overflow-x: auto; /* 允许横向滚动 */
       overflow-y: hidden; /* 禁止纵向滚动 */
       scrollbar-width: none; /* Firefox */
       -ms-overflow-style: none; /* IE and Edge */
       white-space: nowrap;
-      user-select: none; /* 防止文本选择，便于拖动 */
+      cursor: grab; /* 显示可拖动的光标 */
+      align-items: center; /* 垂直居中对齐 */
+    }
+
+    .books-container:active,
+    .books-container.active {
+      cursor: grabbing; /* 拖动时的光标 */
     }
 
     /* 隐藏 WebKit 滚动条 */
-    .dropbox-books-container::-webkit-scrollbar {
+    .books-container::-webkit-scrollbar {
       display: none;
     }
 
@@ -587,6 +709,7 @@
       transition: background-color 0.2s;
       flex-shrink: 0;
       margin-right: 15px; /* 增加间距 */
+      margin-left: 15px; /* 增加左侧间距 */
       margin-top: 15px; /* 增加顶部间距 */
       margin-bottom: 15px; /* 增加底部间距 */
     }
@@ -602,6 +725,174 @@
 
     .upload-text {
       display: none; /* 隐藏文字，只显示图标 */
+    }
+
+    /* 热力图样式 */
+    .reading-heatmap {
+      flex: 0 0 200px; /* 固定宽度，加宽热力图区域 */
+      margin-right: 20px;
+      padding: 10px 10px 15px 10px; /* 增加底部内边距，确保文字不被截断 */
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* 禁止热力图区域滚动 */
+    }
+
+    /* 调整书籍网格样式，使其与热力图并排显示 */
+    .books-grid {
+      display: flex;
+      flex-wrap: nowrap;
+      padding: 10px 0;
+      height: 100%;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .weekday-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      font-size: 10px;
+      color: #fff;
+      opacity: 0.7;
+    }
+
+    .weekday-labels span {
+      width: 14px;
+      text-align: center;
+    }
+
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      grid-gap: 3px;
+      margin-top: 3px;
+      flex: 0 0 auto;
+    }
+
+    .heatmap-day {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      background-color: rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+    }
+
+    .heatmap-day.empty {
+      background-color: transparent;
+    }
+
+    .heatmap-day[data-level="0"] { background-color: rgba(255, 255, 255, 0.1); }
+    .heatmap-day[data-level="1"] { background-color: rgba(80, 200, 120, 0.3); }
+    .heatmap-day[data-level="2"] { background-color: rgba(80, 200, 120, 0.5); }
+    .heatmap-day[data-level="3"] { background-color: rgba(80, 200, 120, 0.7); }
+    .heatmap-day[data-level="4"] { background-color: rgba(80, 200, 120, 0.9); }
+
+    /* 统计条样式 */
+    .reading-stats {
+      margin-top: 12px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: center;
+      padding: 6px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      flex: 0 0 auto;
+    }
+
+    /* 常读书籍样式 */
+    .frequent-books {
+      margin-top: 10px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      flex: 1;
+      overflow-y: auto;
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE and Edge */
+    }
+
+    .frequent-books::-webkit-scrollbar {
+      display: none;
+    }
+
+    .frequent-books-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .frequent-book-item {
+      display: flex;
+      justify-content: space-between;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .frequent-book-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding-right: 5px;
+    }
+
+    .frequent-book-time {
+      flex: 0 0 auto;
+      color: rgba(80, 200, 120, 0.9);
+    }
+
+    /* 已读完对话框样式 */
+    .finish-dialog {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(60, 60, 60, 0.95);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      z-index: 2000;
+      width: 300px;
+      text-align: center;
+      display: none;
+    }
+
+    .finish-dialog-title {
+      font-size: 16px;
+      color: white;
+      margin-bottom: 15px;
+    }
+
+    .finish-dialog-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+    }
+
+    .finish-dialog-button {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+
+    .finish-yes {
+      background-color: rgba(80, 200, 120, 0.8);
+      color: white;
+    }
+
+    .finish-yes:hover {
+      background-color: rgba(80, 200, 120, 1);
+    }
+
+    .finish-no {
+      background-color: rgba(200, 80, 80, 0.8);
+      color: white;
+    }
+
+    .finish-no:hover {
+      background-color: rgba(200, 80, 80, 1);
     }
 
     /* 响应式调整 */
@@ -634,6 +925,36 @@
         height: 160px; /* 与书籍卡片保持一致 */
         margin: 10px; /* 减小间距 */
       }
+
+      /* 热力图响应式调整 */
+      .reading-heatmap {
+        flex: 0 0 150px; /* 小屏幕上减小宽度 */
+        margin-right: 10px;
+        padding: 5px;
+      }
+
+      .heatmap-day {
+        width: 12px;
+        height: 12px;
+      }
+
+      .weekday-labels span {
+        width: 12px;
+        font-size: 8px;
+      }
+
+      /* 统计条响应式调整 */
+      .reading-stats {
+        font-size: 11px;
+        padding: 5px 0;
+        margin-top: 10px;
+      }
+
+      /* 常读书籍响应式调整 */
+      .frequent-books {
+        font-size: 10px;
+        margin-top: 8px;
+      }
     }
   </style>
 </head>
@@ -657,19 +978,54 @@
 
       <!-- 已连接 Dropbox 状态 - 书库内容 -->
       <div id="dropbox-books-container" class="dropbox-books-container" style="display: none;">
-        <div id="books-grid" class="books-grid">
-          <!-- 书籍将在这里动态添加 -->
+        <!-- 左侧热力图容器 -->
+        <div id="reading-heatmap" class="reading-heatmap">
+          <div class="weekday-labels">
+            <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+          </div>
+          <div id="heatmap-grid" class="heatmap-grid"></div>
+
+          <!-- 统计条 -->
+          <div id="reading-stats" class="reading-stats">
+            <span id="reading-days">0天</span> |
+            <span id="reading-hours">0小时</span> |
+            <span id="books-finished">0本</span>
+          </div>
+
+          <!-- 常读书籍 -->
+          <div id="frequent-books" class="frequent-books">
+            <div id="frequent-books-list" class="frequent-books-list">
+              <!-- 常读书籍将在这里动态添加 -->
+            </div>
+          </div>
         </div>
 
-        <div id="upload-area" class="upload-area">
-          <div class="upload-icon">+</div>
-          <input type="file" id="upload-book" accept=".epub" style="display: none;">
+        <!-- 右侧书籍区域 -->
+        <div class="books-container">
+          <div id="books-grid" class="books-grid">
+            <!-- 书籍将在这里动态添加 -->
+          </div>
+
+          <!-- 添加书籍按钮 -->
+          <div id="upload-area" class="upload-area">
+            <div class="upload-icon">+</div>
+            <input type="file" id="upload-book" accept=".epub" style="display: none;">
+          </div>
         </div>
       </div>
     </div>
   </div>
 
 
+
+  <!-- 已读完对话框 -->
+  <div id="finish-dialog" class="finish-dialog">
+    <div class="finish-dialog-title">您已到达书籍末尾，是否标记为已读完？</div>
+    <div class="finish-dialog-buttons">
+      <button id="finish-yes" class="finish-dialog-button finish-yes">是</button>
+      <button id="finish-no" class="finish-dialog-button finish-no">否</button>
+    </div>
+  </div>
 
   <div class="container">
     <div class="reader-area">
@@ -715,6 +1071,347 @@
       };
     }
 
+    // 阅读追踪模块 - 用于记录和显示阅读活动
+    const readingTracker = {
+      // 存储阅读活动数据
+      activityData: {},
+
+      // 存储已读完书籍数据
+      finishedBooks: [],
+
+      // 初始化
+      init() {
+        // 从localStorage加载数据
+        this.loadFromLocal();
+
+        // 生成热力图
+        this.generateMonthHeatmap();
+
+        // 更新统计信息
+        this.updateStats();
+
+        // 更新常读书籍列表
+        this.updateFrequentBooks();
+
+        // 初始化已读完对话框
+        this.initFinishDialog();
+      },
+
+      // 从localStorage加载数据
+      loadFromLocal() {
+        try {
+          // 加载阅读活动数据
+          const savedData = localStorage.getItem('reading-activity-data');
+          if (savedData) {
+            this.activityData = JSON.parse(savedData);
+          }
+
+          // 加载已读完书籍数据
+          const finishedData = localStorage.getItem('finished-books');
+          if (finishedData) {
+            this.finishedBooks = JSON.parse(finishedData);
+          }
+        } catch (error) {
+          console.error('加载阅读数据失败:', error);
+          this.activityData = {};
+          this.finishedBooks = [];
+        }
+      },
+
+      // 保存数据到localStorage
+      saveToLocal() {
+        try {
+          // 保存阅读活动数据
+          localStorage.setItem('reading-activity-data', JSON.stringify(this.activityData));
+
+          // 保存已读完书籍数据
+          localStorage.setItem('finished-books', JSON.stringify(this.finishedBooks));
+        } catch (error) {
+          console.error('保存阅读数据失败:', error);
+        }
+      },
+
+      // 记录阅读活动
+      recordActivity(bookName, minutes) {
+        // 获取今天的日期
+        const today = new Date().toISOString().split('T')[0];
+
+        // 确保该日期的数据存在
+        if (!this.activityData[today]) {
+          this.activityData[today] = {
+            totalMinutes: 0,
+            books: {}
+          };
+        }
+
+        // 确保该书的数据存在
+        if (!this.activityData[today].books[bookName]) {
+          this.activityData[today].books[bookName] = 0;
+        }
+
+        // 更新阅读时间
+        this.activityData[today].books[bookName] += minutes;
+        this.activityData[today].totalMinutes += minutes;
+
+        // 保存数据
+        this.saveToLocal();
+
+        // 更新热力图
+        this.updateHeatmap();
+      },
+
+      // 生成当月热力图
+      generateMonthHeatmap() {
+        const heatmapGrid = document.getElementById('heatmap-grid');
+        if (!heatmapGrid) return;
+
+        // 清空网格
+        heatmapGrid.innerHTML = '';
+
+        // 获取当前月份的数据
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+
+        // 获取当月第一天
+        const firstDay = new Date(year, month, 1);
+        // 获取当月最后一天
+        const lastDay = new Date(year, month + 1, 0);
+
+        // 获取当月第一天是星期几 (0-6, 0是星期日)
+        let firstDayOfWeek = firstDay.getDay();
+        // 调整为星期一为一周的第一天
+        firstDayOfWeek = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+
+        // 创建日期单元格
+        const totalDays = lastDay.getDate();
+
+        // 添加空白单元格直到第一天
+        for (let i = 0; i < firstDayOfWeek; i++) {
+          const emptyCell = document.createElement('div');
+          emptyCell.className = 'heatmap-day empty';
+          heatmapGrid.appendChild(emptyCell);
+        }
+
+        // 添加当月的日期单元格
+        for (let day = 1; day <= totalDays; day++) {
+          const date = new Date(year, month, day);
+          const dateStr = date.toISOString().split('T')[0];
+
+          // 获取该日期的阅读数据
+          const readingLevel = this.getReadingLevelForDate(dateStr);
+
+          const dayCell = document.createElement('div');
+          dayCell.className = 'heatmap-day';
+          dayCell.setAttribute('data-date', dateStr);
+          dayCell.setAttribute('data-level', readingLevel);
+          dayCell.setAttribute('title', `${dateStr}: ${this.getReadingTimeForDate(dateStr)}`);
+
+          heatmapGrid.appendChild(dayCell);
+        }
+      },
+
+      // 更新热力图
+      updateHeatmap() {
+        // 获取今天的日期
+        const today = new Date().toISOString().split('T')[0];
+
+        // 查找今天的单元格
+        const todayCell = document.querySelector(`.heatmap-day[data-date="${today}"]`);
+        if (todayCell) {
+          // 获取今天的阅读级别
+          const readingLevel = this.getReadingLevelForDate(today);
+
+          // 更新单元格
+          todayCell.setAttribute('data-level', readingLevel);
+          todayCell.setAttribute('title', `${today}: ${this.getReadingTimeForDate(today)}`);
+        } else {
+          // 如果找不到今天的单元格，可能是月份已经变化，重新生成热力图
+          this.generateMonthHeatmap();
+        }
+      },
+
+      // 根据日期获取阅读级别 (0-4)
+      getReadingLevelForDate(dateStr) {
+        const dayData = this.activityData[dateStr] || { totalMinutes: 0 };
+
+        if (dayData.totalMinutes === 0) return 0;
+        if (dayData.totalMinutes < 15) return 1;
+        if (dayData.totalMinutes < 30) return 2;
+        if (dayData.totalMinutes < 60) return 3;
+        return 4;
+      },
+
+      // 获取日期的阅读时间描述
+      getReadingTimeForDate(dateStr) {
+        const dayData = this.activityData[dateStr] || { totalMinutes: 0 };
+
+        if (dayData.totalMinutes === 0) {
+          return '无阅读记录';
+        }
+
+        // 格式化时间
+        const hours = Math.floor(dayData.totalMinutes / 60);
+        const minutes = dayData.totalMinutes % 60;
+
+        if (hours > 0) {
+          return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}`;
+        }
+        return `${minutes}分钟`;
+      },
+
+      // 更新统计信息
+      updateStats() {
+        // 获取当前月份
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+
+        // 计算本月有阅读记录的天数
+        let readingDays = 0;
+        let totalMinutes = 0;
+
+        // 遍历所有日期
+        for (const dateStr in this.activityData) {
+          const date = new Date(dateStr);
+
+          // 计算总阅读时间
+          totalMinutes += this.activityData[dateStr].totalMinutes;
+
+          // 如果是当月的日期，计入阅读天数
+          if (date.getFullYear() === year && date.getMonth() === month && this.activityData[dateStr].totalMinutes > 0) {
+            readingDays++;
+          }
+        }
+
+        // 计算总阅读小时数
+        const totalHours = (totalMinutes / 60).toFixed(1);
+
+        // 获取已读完书籍数量
+        const finishedCount = this.finishedBooks.length;
+
+        // 更新DOM
+        document.getElementById('reading-days').textContent = `${readingDays}天`;
+        document.getElementById('reading-hours').textContent = `${totalHours}小时`;
+        document.getElementById('books-finished').textContent = `${finishedCount}本`;
+      },
+
+      // 更新常读书籍列表
+      updateFrequentBooks() {
+        // 创建书籍阅读时间统计
+        const bookStats = {};
+
+        // 遍历所有日期的阅读记录
+        for (const dateStr in this.activityData) {
+          const dayData = this.activityData[dateStr];
+
+          // 遍历该日期的所有书籍
+          for (const bookName in dayData.books) {
+            if (!bookStats[bookName]) {
+              bookStats[bookName] = 0;
+            }
+
+            // 累加阅读时间
+            bookStats[bookName] += dayData.books[bookName];
+          }
+        }
+
+        // 转换为数组并排序
+        const sortedBooks = Object.entries(bookStats)
+          .sort((a, b) => b[1] - a[1]) // 按阅读时间降序排序
+          .slice(0, 3); // 只取前三本
+
+        // 获取常读书籍列表容器
+        const frequentBooksList = document.getElementById('frequent-books-list');
+        frequentBooksList.innerHTML = '';
+
+        // 添加书籍到列表
+        sortedBooks.forEach(([bookName, minutes]) => {
+          const bookItem = document.createElement('div');
+          bookItem.className = 'frequent-book-item';
+
+          // 格式化时间
+          const hours = (minutes / 60).toFixed(1);
+
+          // 创建书名元素
+          const nameElement = document.createElement('div');
+          nameElement.className = 'frequent-book-name';
+          nameElement.textContent = bookName.replace('.epub', '');
+
+          // 创建时间元素
+          const timeElement = document.createElement('div');
+          timeElement.className = 'frequent-book-time';
+          timeElement.textContent = `${hours}h`;
+
+          // 添加到书籍项
+          bookItem.appendChild(nameElement);
+          bookItem.appendChild(timeElement);
+
+          // 添加到列表
+          frequentBooksList.appendChild(bookItem);
+        });
+
+        // 如果没有书籍，显示提示信息
+        if (sortedBooks.length === 0) {
+          const emptyItem = document.createElement('div');
+          emptyItem.className = 'frequent-book-item';
+          emptyItem.textContent = '暂无阅读记录';
+          frequentBooksList.appendChild(emptyItem);
+        }
+      },
+
+      // 初始化已读完对话框
+      initFinishDialog() {
+        const dialog = document.getElementById('finish-dialog');
+        const yesButton = document.getElementById('finish-yes');
+        const noButton = document.getElementById('finish-no');
+
+        // 点击"是"按钮
+        yesButton.addEventListener('click', () => {
+          // 标记当前书籍为已读完
+          if (window.currentBook) {
+            this.markBookAsFinished(window.currentBook);
+          }
+
+          // 隐藏对话框
+          dialog.style.display = 'none';
+        });
+
+        // 点击"否"按钮
+        noButton.addEventListener('click', () => {
+          // 隐藏对话框
+          dialog.style.display = 'none';
+        });
+      },
+
+      // 标记书籍为已读完
+      markBookAsFinished(bookName) {
+        // 检查书籍是否已经标记为已读完
+        if (!this.finishedBooks.includes(bookName)) {
+          // 添加到已读完书籍列表
+          this.finishedBooks.push(bookName);
+
+          // 保存数据
+          this.saveToLocal();
+
+          // 更新统计信息
+          this.updateStats();
+
+          console.log(`已将书籍标记为已读完: ${bookName}`);
+        }
+      },
+
+      // 检查是否到达书籍末尾
+      checkBookEnd(currentLocation, totalLocations) {
+        // 如果当前位置接近总位置的95%以上，认为已到达末尾
+        if (currentLocation > totalLocations * 0.95) {
+          // 显示已读完对话框
+          const dialog = document.getElementById('finish-dialog');
+          dialog.style.display = 'block';
+        }
+      }
+    };
+
     // 进度同步模块 - 用于在Dropbox和本地之间同步阅读进度
     const progressSync = {
       // 保存所有书籍的进度信息
@@ -722,6 +1419,12 @@
 
       // 当前在读书籍
       currentReadingBook: null,
+
+      // 阅读统计数据
+      readingStats: {
+        activityData: {},
+        finishedBooks: []
+      },
 
       // 从Dropbox加载进度信息
       async loadFromDropbox() {
@@ -773,6 +1476,26 @@
             console.log('当前在读书籍:', this.currentReadingBook);
           }
 
+          // 获取阅读统计数据
+          if (data._readingStats) {
+            this.readingStats = data._readingStats;
+            console.log('从Dropbox加载阅读统计数据');
+
+            // 更新readingTracker的数据
+            if (this.readingStats.activityData) {
+              readingTracker.activityData = this.readingStats.activityData;
+            }
+
+            if (this.readingStats.finishedBooks) {
+              readingTracker.finishedBooks = this.readingStats.finishedBooks;
+            }
+
+            // 更新UI
+            readingTracker.updateStats();
+            readingTracker.updateFrequentBooks();
+            readingTracker.generateMonthHeatmap();
+          }
+
           // 同步到localStorage
           this.syncToLocal();
           return true;
@@ -801,6 +1524,9 @@
             this.progressData._currentBook = window.currentBook;
             this.currentReadingBook = window.currentBook;
           }
+
+          // 添加阅读统计数据
+          this.progressData._readingStats = this.readingStats;
 
           // 进度文件路径 - 与loadFromDropbox保持一致
           const progressFilePath = '/BookBlue_Progress.json';
@@ -860,6 +1586,23 @@
           this.progressData._currentBook = window.currentBook;
           this.currentReadingBook = window.currentBook;
         }
+
+        // 同步阅读统计数据
+        try {
+          // 同步阅读活动数据
+          const activityData = localStorage.getItem('reading-activity-data');
+          if (activityData) {
+            this.readingStats.activityData = JSON.parse(activityData);
+          }
+
+          // 同步已读完书籍数据
+          const finishedBooks = localStorage.getItem('finished-books');
+          if (finishedBooks) {
+            this.readingStats.finishedBooks = JSON.parse(finishedBooks);
+          }
+        } catch (error) {
+          console.error('同步阅读统计数据失败:', error);
+        }
       },
 
       // 从内存同步到localStorage
@@ -876,6 +1619,21 @@
         if (this.currentReadingBook) {
           // 不直接设置window.currentBook，因为这需要在加载书籍时设置
           localStorage.setItem('_currentReadingBook', this.currentReadingBook);
+        }
+
+        // 同步阅读统计数据到localStorage
+        try {
+          // 同步阅读活动数据
+          if (Object.keys(this.readingStats.activityData).length > 0) {
+            localStorage.setItem('reading-activity-data', JSON.stringify(this.readingStats.activityData));
+          }
+
+          // 同步已读完书籍数据
+          if (this.readingStats.finishedBooks.length > 0) {
+            localStorage.setItem('finished-books', JSON.stringify(this.readingStats.finishedBooks));
+          }
+        } catch (error) {
+          console.error('同步阅读统计数据到localStorage失败:', error);
         }
       },
 
@@ -2831,6 +3589,14 @@
               if (currentBook) {
                 // 使用进度同步模块更新进度
                 progressSync.updateBookProgress(currentBook, currentLocation.toString());
+
+                // 记录阅读活动 - 每次翻页记录1分钟的阅读时间
+                readingTracker.recordActivity(currentBook, 1);
+
+                // 检查是否到达书籍末尾
+                if (book.locations && book.locations.total) {
+                  readingTracker.checkBookEnd(newLocation, book.locations.total);
+                }
               }
             }
           }
