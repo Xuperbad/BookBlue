@@ -1657,6 +1657,87 @@
       return card;
     }
 
+    // IndexedDB缓存管理
+    const bookCache = {
+      // 数据库名称和版本
+      dbName: 'BookBlueCache',
+      dbVersion: 1,
+      storeName: 'books',
+
+      // 打开数据库连接
+      openDB() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(this.dbName, this.dbVersion);
+
+          // 如果数据库不存在或版本升级，创建对象存储
+          request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(this.storeName)) {
+              db.createObjectStore(this.storeName);
+            }
+          };
+
+          request.onsuccess = (event) => {
+            resolve(event.target.result);
+          };
+
+          request.onerror = (event) => {
+            console.error('打开IndexedDB失败:', event.target.error);
+            reject(event.target.error);
+          };
+        });
+      },
+
+      // 从缓存获取书籍
+      async getBook(key) {
+        try {
+          const db = await this.openDB();
+          return new Promise((resolve, reject) => {
+            const transaction = db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.get(key);
+
+            request.onsuccess = (event) => {
+              resolve(event.target.result);
+            };
+
+            request.onerror = (event) => {
+              console.error('从缓存获取书籍失败:', event.target.error);
+              reject(event.target.error);
+            };
+          });
+        } catch (error) {
+          console.error('缓存操作失败:', error);
+          return null;
+        }
+      },
+
+      // 将书籍保存到缓存
+      async saveBook(key, file) {
+        try {
+          const db = await this.openDB();
+          return new Promise((resolve, reject) => {
+            const transaction = db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.put(file, key);
+
+            request.onsuccess = () => {
+              console.log(`书籍已缓存: ${key}`);
+              resolve(true);
+            };
+
+            request.onerror = (event) => {
+              console.error('缓存书籍失败:', event.target.error);
+              reject(event.target.error);
+            };
+          });
+        } catch (error) {
+          console.error('缓存操作失败:', error);
+          return false;
+        }
+      }
+    };
+
     // 从 Dropbox 加载书籍
     async function loadBookFromDropbox(path) {
       try {
@@ -1666,7 +1747,20 @@
           return;
         }
 
-        console.log(`正在从 Dropbox 加载书籍: ${path}`);
+        // 生成缓存键
+        const cacheKey = `dropbox-${path}`;
+
+        // 尝试从缓存加载
+        console.log(`检查缓存中是否有书籍: ${path}`);
+        const cachedBook = await bookCache.getBook(cacheKey);
+
+        if (cachedBook) {
+          console.log(`使用缓存的书籍: ${path}`);
+          window.handleFile(cachedBook);
+          return;
+        }
+
+        console.log(`缓存中没有找到书籍，从 Dropbox 加载: ${path}`);
 
         // 下载文件
         const response = await fetch('https://content.dropboxapi.com/2/files/download', {
@@ -1701,6 +1795,14 @@
         );
 
         console.log('创建的File对象:', file);
+
+        // 将书籍保存到缓存
+        try {
+          await bookCache.saveBook(cacheKey, file);
+          console.log(`书籍已保存到缓存: ${fileName}`);
+        } catch (cacheError) {
+          console.warn('保存书籍到缓存失败，但将继续加载书籍:', cacheError);
+        }
 
         // 处理文件
         window.handleFile(file);
