@@ -390,10 +390,10 @@
 
     .top-drawer {
       position: fixed;
-      top: -80px; /* 初始状态隐藏 */
+      top: -240px; /* 初始状态隐藏 - 增加到原来的三倍 */
       left: 0;
       width: 100%;
-      height: 80px; /* 固定高度 */
+      height: 240px; /* 固定高度 - 增加到原来的三倍 */
       background-color: rgba(74, 66, 56, 0.9);
       z-index: 999;
       transition: top 0.3s ease;
@@ -460,25 +460,20 @@
       height: 100%;
       width: 100%;
       padding: 0 20px;
-      overflow-x: auto;
-      overflow-y: hidden;
+      overflow-x: auto; /* 只允许横向滚动 */
+      overflow-y: hidden; /* 禁止纵向滚动 */
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE and Edge */
       white-space: nowrap;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+      user-select: none; /* 防止文本选择，便于拖动 */
     }
 
+    /* 隐藏 WebKit 滚动条 */
     .dropbox-books-container::-webkit-scrollbar {
-      height: 6px;
+      display: none;
     }
 
-    .dropbox-books-container::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .dropbox-books-container::-webkit-scrollbar-thumb {
-      background-color: rgba(255, 255, 255, 0.3);
-      border-radius: 3px;
-    }
+    /* 移除了滚动条样式 */
 
     /* 书籍网格 */
     .books-grid {
@@ -490,8 +485,8 @@
     }
 
     .book-card {
-      width: 50px;
-      height: 60px;
+      width: 140px; /* 增加宽度以更好地显示封面 */
+      height: 180px; /* 增加高度以更好地显示封面 */
       background-color: rgba(255, 255, 255, 0.9);
       border-radius: 4px;
       overflow: hidden;
@@ -500,6 +495,9 @@
       cursor: pointer;
       position: relative;
       flex-shrink: 0;
+      margin-right: 15px; /* 增加间距 */
+      margin-top: 15px; /* 增加顶部间距 */
+      margin-bottom: 15px; /* 增加底部间距 */
     }
 
     .book-card:hover {
@@ -514,8 +512,37 @@
       align-items: center;
       justify-content: center;
       color: #4a4238;
-      font-size: 24px;
+      font-size: 24px; /* 首字母显示时的字体大小 */
       position: relative;
+      overflow: hidden;
+      border-radius: 4px; /* 圆角边框 */
+    }
+
+    /* 封面加载指示器样式 */
+    .cover-loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(0, 0, 0, 0.1);
+      color: #4a4238;
+      font-size: 14px;
+    }
+
+    /* 封面加载指示器动画 */
+    .cover-loading:after {
+      content: '';
+      animation: coverLoadingDots 1.5s infinite;
+    }
+
+    @keyframes coverLoadingDots {
+      0%, 20% { content: "."; }
+      40% { content: ".."; }
+      60%, 100% { content: "..."; }
     }
 
     .book-info {
@@ -548,8 +575,8 @@
     }
 
     .upload-area {
-      width: 50px;
-      height: 60px;
+      width: 140px; /* 与书籍卡片宽度一致 */
+      height: 180px; /* 与书籍卡片高度一致 */
       background-color: rgba(255, 255, 255, 0.2);
       border-radius: 4px;
       display: flex;
@@ -559,6 +586,9 @@
       cursor: pointer;
       transition: background-color 0.2s;
       flex-shrink: 0;
+      margin-right: 15px; /* 增加间距 */
+      margin-top: 15px; /* 增加顶部间距 */
+      margin-bottom: 15px; /* 增加底部间距 */
     }
 
     .upload-area:hover {
@@ -584,17 +614,25 @@
         margin-right: 10px;
       }
 
+      .top-drawer {
+        height: 240px; /* 保持与大屏幕一致 */
+        top: -240px; /* 初始状态隐藏 */
+      }
+
       .book-card {
-        width: 120px;
+        width: 120px; /* 在小屏幕上稍微减小宽度 */
+        height: 160px; /* 在小屏幕上稍微减小高度 */
+        margin: 10px; /* 减小间距 */
       }
 
       .book-cover {
-        height: 160px;
+        font-size: 12px; /* 在小屏幕上增加字体大小 */
       }
 
       .upload-area {
-        width: 120px;
-        height: 200px;
+        width: 120px; /* 与书籍卡片保持一致 */
+        height: 160px; /* 与书籍卡片保持一致 */
+        margin: 10px; /* 减小间距 */
       }
     }
   </style>
@@ -1008,15 +1046,175 @@
       return path;
     }
 
+    // 封面缓存管理
+    const coverCache = {
+      async get(bookId) {
+        try {
+          return localStorage.getItem(`book-cover-${bookId}`);
+        } catch (e) {
+          console.error('获取封面缓存失败:', e);
+          return null;
+        }
+      },
+
+      async set(bookId, coverUrl) {
+        try {
+          localStorage.setItem(`book-cover-${bookId}`, coverUrl);
+        } catch (e) {
+          console.error('保存封面缓存失败:', e);
+        }
+      }
+    };
+
+    // 从EPUB文件提取封面
+    async function extractCoverFromEpub(file) {
+      return new Promise((resolve, reject) => {
+        try {
+          console.log('开始提取封面:', file.name);
+
+          // 检查是否已经有缓存的封面
+          const bookId = file.name;
+          coverCache.get(bookId).then(cachedCover => {
+            if (cachedCover) {
+              console.log('使用缓存的封面:', bookId);
+              resolve(cachedCover);
+              return;
+            }
+
+            // 没有缓存，需要提取封面
+            console.log('没有缓存的封面，开始提取');
+
+            // 创建临时的Book对象
+            const book = ePub();
+
+            // 使用FileReader读取文件
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              const arrayBuffer = e.target.result;
+
+              // 打开EPUB文件
+              book.open(arrayBuffer)
+                .then(() => {
+                  // 尝试获取封面
+                  return book.loaded.cover;
+                })
+                .then(coverPath => {
+                  if (!coverPath) {
+                    console.log('EPUB文件没有封面:', file.name);
+                    resolve(null);
+                    return;
+                  }
+
+                  console.log('找到封面路径:', coverPath);
+
+                  // 获取封面URL
+                  return book.archive.createUrl(coverPath, { base64: true });
+                })
+                .then(coverUrl => {
+                  if (coverUrl) {
+                    console.log('成功提取封面URL');
+
+                    // 缓存封面URL
+                    coverCache.set(bookId, coverUrl);
+
+                    resolve(coverUrl);
+                  } else {
+                    console.log('无法创建封面URL');
+                    resolve(null);
+                  }
+                })
+                .catch(error => {
+                  console.error('提取封面时出错:', error);
+                  resolve(null);
+                });
+            };
+
+            reader.onerror = function(error) {
+              console.error('读取文件时出错:', error);
+              resolve(null);
+            };
+
+            reader.readAsArrayBuffer(file);
+          });
+        } catch (error) {
+          console.error('提取封面过程中出错:', error);
+          resolve(null);
+        }
+      });
+    }
+
+    // 从Dropbox下载文件并提取封面
+    async function extractCoverFromDropbox(path) {
+      try {
+        const accessToken = localStorage.getItem('dropboxAccessToken');
+        if (!accessToken) {
+          console.error('未找到Dropbox访问令牌');
+          return null;
+        }
+
+        // 检查缓存
+        const bookId = path.split('/').pop();
+        const cachedCover = await coverCache.get(bookId);
+        if (cachedCover) {
+          console.log('使用缓存的Dropbox封面:', bookId);
+          return cachedCover;
+        }
+
+        console.log('从Dropbox下载文件以提取封面:', path);
+
+        // 使用Dropbox API下载文件
+        const argObj = { path: path };
+        const safeArg = httpHeaderSafeJson(argObj);
+
+        const response = await fetch('https://content.dropboxapi.com/2/files/download', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/octet-stream',
+            'Dropbox-API-Arg': safeArg
+          }
+        });
+
+        if (!response.ok) {
+          console.error('从Dropbox下载文件失败:', response.status);
+          return null;
+        }
+
+        // 获取文件内容
+        const arrayBuffer = await response.arrayBuffer();
+
+        // 获取文件名
+        const fileName = path.split('/').pop();
+
+        // 创建File对象
+        const blob = new Blob([arrayBuffer], {type: 'application/epub+zip'});
+        const file = new File([blob], fileName, {type: 'application/epub+zip'});
+
+        // 提取封面
+        return await extractCoverFromEpub(file);
+      } catch (error) {
+        console.error('从Dropbox提取封面失败:', error);
+        return null;
+      }
+    }
+
     // 创建书籍卡片
     function createBookCard(book) {
       const card = document.createElement('div');
       card.className = 'book-card';
 
-      // 创建封面
+      // 创建封面容器
       const cover = document.createElement('div');
       cover.className = 'book-cover';
-      cover.textContent = book.name.charAt(0).toUpperCase();
+
+      // 创建加载指示器
+      const loadingIndicator = document.createElement('div');
+      loadingIndicator.className = 'cover-loading';
+      loadingIndicator.textContent = '...';
+      cover.appendChild(loadingIndicator);
+
+      // 获取书名（去掉.epub后缀）
+      const bookName = book.name.replace('.epub', '');
 
       // 创建信息
       const info = document.createElement('div');
@@ -1024,7 +1222,7 @@
 
       const title = document.createElement('div');
       title.className = 'book-title';
-      title.textContent = book.name.replace('.epub', '');
+      title.textContent = bookName;
 
       // 检查是否包含非ASCII字符
       if (/[^\x00-\x7F]/.test(book.name)) {
@@ -1050,6 +1248,32 @@
         loadBookFromDropbox(sanitizedPath);
         closeDrawer();
       });
+
+      // 异步加载封面
+      setTimeout(() => {
+        extractCoverFromDropbox(book.path_lower).then(coverUrl => {
+          // 移除加载指示器
+          if (loadingIndicator.parentNode) {
+            loadingIndicator.parentNode.removeChild(loadingIndicator);
+          }
+
+          if (coverUrl) {
+            // 设置封面图片
+            cover.style.backgroundImage = `url(${coverUrl})`;
+            cover.style.backgroundSize = 'cover';
+            cover.style.backgroundPosition = 'center';
+            cover.style.backgroundRepeat = 'no-repeat';
+            cover.textContent = '';
+          } else {
+            // 如果没有封面，显示首字母
+            cover.textContent = bookName.charAt(0).toUpperCase();
+            cover.style.display = 'flex';
+            cover.style.alignItems = 'center';
+            cover.style.justifyContent = 'center';
+            cover.style.fontSize = '24px';
+          }
+        });
+      }, 10);
 
       return card;
     }
@@ -1183,14 +1407,15 @@
         }
       });
 
-      // 点击页面其他区域关闭抽屉
+      // 点击页面区域处理
       document.addEventListener('click', function(event) {
-        // 如果点击的不是抽屉或触发器，且抽屉是打开的，则关闭抽屉
+        // 如果抽屉是打开的，且点击的不是触发器，也不是抽屉本身，则关闭抽屉
         if (
-          !topDrawer.contains(event.target) &&
+          topDrawer.classList.contains('open') &&
           !drawerTrigger.contains(event.target) &&
-          topDrawer.classList.contains('open')
+          !topDrawer.contains(event.target)
         ) {
+          // 关闭抽屉
           closeDrawer();
         }
       });
@@ -1203,6 +1428,61 @@
           event.stopPropagation();
           // 处理 Dropbox 授权
           handleDropboxAuth();
+        });
+      }
+
+      // 添加抽屉拖动功能
+      const booksContainer = document.getElementById('dropbox-books-container');
+      if (booksContainer) {
+        let isDragging = false;
+        let startX = 0;
+        let scrollLeft = 0;
+
+        // 鼠标按下事件
+        booksContainer.addEventListener('mousedown', function(e) {
+          isDragging = true;
+          startX = e.pageX - booksContainer.offsetLeft;
+          scrollLeft = booksContainer.scrollLeft;
+        });
+
+        // 鼠标移动事件
+        booksContainer.addEventListener('mousemove', function(e) {
+          if (!isDragging) return;
+          e.preventDefault();
+          const x = e.pageX - booksContainer.offsetLeft;
+          const walkX = (x - startX) * 2; // 滚动速度
+          booksContainer.scrollLeft = scrollLeft - walkX;
+        });
+
+        // 鼠标释放事件
+        booksContainer.addEventListener('mouseup', function() {
+          isDragging = false;
+        });
+
+        // 鼠标离开事件
+        booksContainer.addEventListener('mouseleave', function() {
+          isDragging = false;
+        });
+
+        // 触摸事件支持
+        booksContainer.addEventListener('touchstart', function(e) {
+          if (e.touches.length === 1) {
+            isDragging = true;
+            startX = e.touches[0].pageX - booksContainer.offsetLeft;
+            scrollLeft = booksContainer.scrollLeft;
+          }
+        });
+
+        booksContainer.addEventListener('touchmove', function(e) {
+          if (!isDragging || e.touches.length !== 1) return;
+          e.preventDefault(); // 防止页面滚动
+          const x = e.touches[0].pageX - booksContainer.offsetLeft;
+          const walkX = (x - startX) * 2;
+          booksContainer.scrollLeft = scrollLeft - walkX;
+        });
+
+        booksContainer.addEventListener('touchend', function() {
+          isDragging = false;
         });
       }
 
@@ -1221,10 +1501,16 @@
             // 如果已连接 Dropbox，上传到 Dropbox
             const accessToken = localStorage.getItem('dropboxAccessToken');
             if (accessToken) {
-              uploadToDropbox(file);
+              // 先提取封面，然后上传到Dropbox
+              extractCoverFromEpub(file).then(() => {
+                uploadToDropbox(file);
+              });
             } else {
               // 否则直接处理文件
-              window.handleFile(file);
+              // 先提取封面，然后处理文件
+              extractCoverFromEpub(file).then(() => {
+                window.handleFile(file);
+              });
             }
             // 关闭抽屉
             closeDrawer();
@@ -1943,8 +2229,19 @@
 
                       // 添加监听器，使用passive: true以避免警告
                       iframeDoc.addEventListener('wheel', wheelListener, { passive: true });
+
+                      // 添加点击事件监听器，确保点击iframe内容时也能关闭抽屉
+                      iframeDoc.addEventListener('click', function(e) {
+                        // 获取顶部抽屉元素
+                        const topDrawer = document.getElementById('top-drawer');
+                        // 如果抽屉是打开的，关闭它
+                        if (topDrawer && topDrawer.classList.contains('open')) {
+                          // 调用全局关闭抽屉函数
+                          window.closeDrawer();
+                        }
+                      });
                     } catch (e) {
-                      console.error('添加滚轮事件监听器时出错:', e);
+                      console.error('添加事件监听器时出错:', e);
                     }
                   }, 200);
                 });
