@@ -690,7 +690,7 @@
 
       // 检查是否设置了 client_secret
       if (!dropboxConfig.clientSecret) {
-        alert('请先设置 Dropbox 应用密钥对应的密钥（client_secret）。\n\n1. 登录 Dropbox 开发者控制台 (https://www.dropbox.com/developers/apps)\n2. 选择您的应用\n3. 在"App secret"部分找到密钥\n4. 将密钥复制到代码中的 clientSecret 字段');
+        alert('请先设置 Dropbox 应用密钥对应的密钥（client_secret）。');
         return;
       }
 
@@ -716,21 +716,11 @@
         const authUrlString = authUrl.toString();
         console.log(`授权 URL: ${authUrlString}`);
 
-        // 显示重定向 URI 信息，帮助用户排查问题
-        console.log('重要提示: 请确保在 Dropbox 开发者控制台中设置了以下重定向 URI:');
-        console.log(redirectUrl);
-
-        // 提示用户检查 Dropbox 应用设置
-        const confirmMessage = `即将跳转到 Dropbox 授权页面。\n\n请确保您在 Dropbox 开发者控制台中设置了以下重定向 URI:\n${redirectUrl}\n\n点击确定继续，或取消以停止。`;
-
-        if (confirm(confirmMessage)) {
-          // 跳转到 Dropbox 授权页面
-          window.location.href = authUrlString;
-        } else {
-          console.log('用户取消了授权流程');
-        }
+        // 跳转到 Dropbox 授权页面
+        window.location.href = authUrlString;
       } catch (error) {
         console.error('生成授权 URL 时出错:', error);
+        alert('连接 Dropbox 时出错，请重试。');
       }
     }
 
@@ -1450,9 +1440,9 @@
         console.error('Error loading saved notes:', error);
       }
 
-      // 处理拖放事件 - 简化版本
-      // 为整个文档添加拖放事件
-      document.addEventListener('dragover', function(event) {
+      // 处理拖放事件 - 使用统一的处理函数
+      // 处理拖放区域样式
+      function handleDragOver(event) {
         event.preventDefault();
 
         // 如果库未加载完成，不处理
@@ -1466,18 +1456,20 @@
         // 设置样式
         dropArea.style.borderColor = '#4a4238';
         dropArea.style.backgroundColor = 'rgba(74, 66, 56, 0.1)';
-      });
+      }
 
-      document.addEventListener('dragleave', function(event) {
+      // 处理拖放离开
+      function handleDragLeave() {
         // 如果库未加载完成，不处理
         if (!window.librariesReady) return;
 
         // 重置样式
         dropArea.style.borderColor = '#ccc';
         dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-      });
+      }
 
-      document.addEventListener('drop', function(event) {
+      // 处理文件拖放
+      function handleFileDrop(event) {
         event.preventDefault();
 
         // 如果库未加载完成，显示提示
@@ -1499,7 +1491,7 @@
             setTimeout(function() {
               try {
                 // 处理新文件
-                handleFile(file);
+                window.handleFile(file);
               } catch (error) {
                 console.error('处理文件时出错:', error);
               }
@@ -1508,57 +1500,44 @@
         } catch (error) {
           console.error('处理拖放事件时出错:', error);
         }
-      });
+      }
+
+      // 为整个文档添加拖放事件
+      document.addEventListener('dragover', handleDragOver);
+      document.addEventListener('dragleave', handleDragLeave);
+      document.addEventListener('drop', handleFileDrop);
 
       // 为dropArea也添加事件监听器（确保兼容性）
-      dropArea.addEventListener('dragover', function(event) {
-        event.preventDefault();
-
-        if (!window.librariesReady) return;
-
-        dropArea.style.borderColor = '#4a4238';
-        dropArea.style.backgroundColor = 'rgba(74, 66, 56, 0.1)';
-      });
-
-      dropArea.addEventListener('dragleave', function() {
-        if (!window.librariesReady) return;
-
-        dropArea.style.borderColor = '#ccc';
-        dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-      });
-
-      dropArea.addEventListener('drop', function(event) {
-        event.preventDefault();
-
-        if (!window.librariesReady) {
-          alert('Libraries are still loading. Please wait a moment and try again.');
-          console.log('Error: Libraries not ready yet');
-          return;
-        }
-
-        dropArea.style.borderColor = '#ccc';
-        dropArea.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-
-        try {
-          const file = event.dataTransfer.files[0];
-          if (file && file.name.toLowerCase().endsWith('.epub')) {
-            // 处理新文件
-            window.handleFile(file);
-          }
-        } catch (error) {
-          console.error('处理拖放事件时出错:', error);
-        }
-      });
+      dropArea.addEventListener('dragover', handleDragOver);
+      dropArea.addEventListener('dragleave', handleDragLeave);
+      dropArea.addEventListener('drop', handleFileDrop);
 
       // 移除了示例EPUB加载功能
 
-      // 设置自动保存笔记
-      notesTextarea.addEventListener('input', function() {
+      // 防抖函数 - 用于延迟执行频繁触发的函数
+      function debounce(func, wait) {
+        let timeout;
+        return function() {
+          const context = this;
+          const args = arguments;
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func.apply(context, args), wait);
+        };
+      }
+
+      // 保存笔记函数 - 提取为独立函数避免代码重复
+      function saveNotes() {
         if (currentBook) {
           currentNotes[currentBook] = notesTextarea.value;
           localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
         }
-      });
+      }
+
+      // 使用防抖优化笔记保存 - 500ms内只保存一次
+      const debouncedSaveNotes = debounce(saveNotes, 500);
+
+      // 设置自动保存笔记 - 使用防抖函数
+      notesTextarea.addEventListener('input', debouncedSaveNotes);
 
       // 添加笔记区域的焦点状态管理
       let isNotesActive = false; // 全局变量，跟踪笔记区域是否处于活动状态
@@ -1576,11 +1555,8 @@
         // 移除视觉提示
         notesTextarea.style.outline = 'none';
 
-        // 自动保存笔记内容
-        if (currentBook) {
-          currentNotes[currentBook] = notesTextarea.value;
-          localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
-        }
+        // 立即保存笔记内容（不使用防抖）
+        saveNotes();
       });
 
       // 更新笔记区域的箭头方向
@@ -1590,6 +1566,35 @@
           icon.textContent = '<'; // 展开状态显示左箭头（指向收起方向）
         } else {
           icon.textContent = '>'; // 收起状态显示右箭头（指向展开方向）
+        }
+      }
+
+      // 重新渲染电子书函数 - 提取为独立函数避免代码重复
+      function rerenderBook() {
+        if (!book || !rendition) return;
+
+        // 获取当前容器尺寸
+        const container = document.getElementById('epub-container');
+        const newWidth = container.clientWidth;
+        const newHeight = container.clientHeight;
+
+        // 调整渲染器尺寸
+        rendition.resize(newWidth, newHeight);
+
+        // 使用当前位置重新渲染
+        try {
+          const location = rendition.location;
+          if (location && location.start) {
+            rendition.display(location.start.cfi);
+          } else {
+            // 如果无法获取当前位置，使用保存的位置
+            const cfi = book.locations.cfiFromLocation(currentLocation);
+            rendition.display(cfi);
+          }
+        } catch (error) {
+          // 使用保存的位置
+          const cfi = book.locations.cfiFromLocation(currentLocation);
+          rendition.display(cfi);
         }
       }
 
@@ -1610,51 +1615,17 @@
 
         // 如果需要重新渲染，且书籍和渲染器已加载
         if (rerender && book && rendition) {
-          // 使用实时渲染 - 在过渡动画期间每50ms渲染一次
-          let animationTime = 0;
-          const animationDuration = 300; // 过渡动画持续时间
-          const renderInterval = 50; // 每50ms渲染一次
+          // 清除可能存在的旧事件监听器
+          notesArea.removeEventListener('transitionend', rerenderBook);
 
-          // 清除可能存在的旧定时器
+          // 添加过渡结束事件监听器，只在过渡动画结束时重新渲染一次
+          notesArea.addEventListener('transitionend', rerenderBook, { once: true });
+
+          // 为了兼容性，也添加一个备用的定时器，确保即使transitionend事件没有触发也能重新渲染
           if (window.notesAnimationTimer) {
-            clearInterval(window.notesAnimationTimer);
+            clearTimeout(window.notesAnimationTimer);
           }
-
-          // 设置定时器，在过渡动画期间定期渲染
-          window.notesAnimationTimer = setInterval(() => {
-            // 获取当前容器尺寸
-            const container = document.getElementById('epub-container');
-            const newWidth = container.clientWidth;
-            const newHeight = container.clientHeight;
-
-            // 调整渲染器尺寸
-            rendition.resize(newWidth, newHeight);
-
-            // 使用当前位置重新渲染
-            try {
-              const location = rendition.location;
-              if (location && location.start) {
-                rendition.display(location.start.cfi);
-              } else {
-                // 如果无法获取当前位置，使用保存的位置
-                const cfi = book.locations.cfiFromLocation(currentLocation);
-                rendition.display(cfi);
-              }
-            } catch (error) {
-              // 使用保存的位置
-              const cfi = book.locations.cfiFromLocation(currentLocation);
-              rendition.display(cfi);
-            }
-
-            // 更新动画时间
-            animationTime += renderInterval;
-
-            // 如果动画结束，清除定时器
-            if (animationTime >= animationDuration) {
-              clearInterval(window.notesAnimationTimer);
-              window.notesAnimationTimer = null;
-            }
-          }, renderInterval);
+          window.notesAnimationTimer = setTimeout(rerenderBook, 350); // 略大于CSS过渡时间
         }
       }
 
@@ -1859,17 +1830,7 @@
                   }
                 }
 
-                // 设置iframe的sandbox属性，允许脚本执行
-                setTimeout(function() {
-                  try {
-                    const iframe = document.querySelector('#epub-container iframe');
-                    if (iframe) {
-                      iframe.sandbox = 'allow-same-origin allow-scripts';
-                    }
-                  } catch (e) {
-                    console.error('设置iframe sandbox时出错:', e);
-                  }
-                }, 300);
+                // 注意：移除了这里的iframe sandbox设置，因为在rendered事件中已经设置了
 
                 // 检查渲染器是否正确创建
                 if (!rendition) {
@@ -2022,8 +1983,8 @@
           // 设置键盘导航
           document.addEventListener('keydown', handleKeyPress);
 
-          // 添加窗口大小调整事件监听器
-          window.addEventListener('resize', handleResize);
+          // 添加窗口大小调整事件监听器 - 使用节流版本
+          window.addEventListener('resize', throttledResize);
 
         } catch (error) {
           console.error('Error in handleFile:', error);
@@ -2055,6 +2016,28 @@
         }
       }
 
+      // 更新阅读位置函数 - 提取为独立函数避免代码重复
+      function updateReadingPosition() {
+        try {
+          const location = rendition.location;
+          if (location && location.start) {
+            const locationCfi = location.start.cfi;
+            const newLocation = book.locations.locationFromCfi(locationCfi);
+            currentLocation = newLocation;
+
+            // 更新进度显示
+            window.updateProgressInfo();
+
+            // 保存阅读进度
+            if (currentBook) {
+              localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+            }
+          }
+        } catch (e) {
+          console.error('更新位置时出错:', e);
+        }
+      }
+
       // 导航到上一页 - 使用ePub.js内置方法
       function navigatePrev() {
         if (!book || !rendition) return;
@@ -2062,26 +2045,7 @@
         // 使用rendition的prev方法导航到上一页
         rendition.prev().then(function() {
           // 导航成功后更新当前位置
-          setTimeout(() => {
-            try {
-              const location = rendition.location;
-              if (location && location.start) {
-                const locationCfi = location.start.cfi;
-                const newLocation = book.locations.locationFromCfi(locationCfi);
-                currentLocation = newLocation;
-
-                // 更新进度显示
-                window.updateProgressInfo();
-
-                // 保存阅读进度
-                if (currentBook) {
-                  localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
-                }
-              }
-            } catch (e) {
-              console.error('更新位置时出错:', e);
-            }
-          }, 100);
+          setTimeout(updateReadingPosition, 100);
         }).catch(function() {
           // 已经是第一页
         });
@@ -2094,26 +2058,7 @@
         // 使用rendition的next方法导航到下一页
         rendition.next().then(function() {
           // 导航成功后更新当前位置
-          setTimeout(() => {
-            try {
-              const location = rendition.location;
-              if (location && location.start) {
-                const locationCfi = location.start.cfi;
-                const newLocation = book.locations.locationFromCfi(locationCfi);
-                currentLocation = newLocation;
-
-                // 更新进度显示
-                window.updateProgressInfo();
-
-                // 保存阅读进度
-                if (currentBook) {
-                  localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
-                }
-              }
-            } catch (e) {
-              console.error('更新位置时出错:', e);
-            }
-          }, 100);
+          setTimeout(updateReadingPosition, 100);
         }).catch(function() {
           // 已经是最后一页
         });
@@ -2123,72 +2068,37 @@
       window.navigatePrev = navigatePrev;
       window.navigateNext = navigateNext;
 
+      // 节流函数 - 用于限制函数执行频率
+      function throttle(func, wait) {
+        let lastTime = 0;
+        return function() {
+          const now = Date.now();
+          if (now - lastTime >= wait) {
+            lastTime = now;
+            func.apply(this, arguments);
+          }
+        };
+      }
+
       // 处理窗口大小调整
       function handleResize() {
         if (!book || !rendition) {
           return;
         }
 
-        // 使用节流（Throttling）技术，确保函数在指定时间间隔内最多执行一次
-        const now = Date.now();
-
-        // 如果是第一次调用，或者距离上次执行已经超过了节流时间间隔
-        if (!window.lastResizeTime || now - window.lastResizeTime >= 50) { // 50ms的节流间隔
-          window.lastResizeTime = now;
-
-          // 获取新的容器尺寸
-          const container = document.getElementById('epub-container');
-          const newWidth = container.clientWidth;
-          const newHeight = container.clientHeight;
-
-          // 获取当前位置信息，用于调整后恢复
-          try {
-            // 直接获取当前位置，不使用Promise
-            const location = rendition.location;
-            if (location && location.start) {
-              const currentCfi = location.start.cfi;
-
-              // 调整渲染器尺寸
-              rendition.resize(newWidth, newHeight);
-
-              // 使用当前CFI重新渲染
-              rendition.display(currentCfi);
-            } else {
-              // 使用保存的位置索引
-              const cfi = book.locations.cfiFromLocation(currentLocation);
-              rendition.resize(newWidth, newHeight);
-              rendition.display(cfi);
-            }
-          } catch (error) {
-            // 如果出错，使用保存的位置索引
-            const cfi = book.locations.cfiFromLocation(currentLocation);
-            rendition.resize(newWidth, newHeight);
-            rendition.display(cfi);
-          }
-        }
+        // 使用之前创建的rerenderBook函数重新渲染
+        rerenderBook();
 
         // 在拖动结束后进行一次完整渲染
         // 这是为了确保在拖动结束后内容完全正确
         if (window.finalResizeTimer) {
           clearTimeout(window.finalResizeTimer);
         }
-        window.finalResizeTimer = setTimeout(function() {
-          const container = document.getElementById('epub-container');
-          const newWidth = container.clientWidth;
-          const newHeight = container.clientHeight;
-
-          try {
-            const location = rendition.location;
-            if (location && location.start) {
-              const currentCfi = location.start.cfi;
-              rendition.resize(newWidth, newHeight);
-              rendition.display(currentCfi);
-            }
-          } catch (error) {
-            // 忽略错误
-          }
-        }, 300); // 拖动结束后300ms进行最终渲染
+        window.finalResizeTimer = setTimeout(rerenderBook, 300); // 拖动结束后300ms进行最终渲染
       }
+
+      // 使用节流函数包装handleResize，限制执行频率
+      const throttledResize = throttle(handleResize, 50); // 50ms的节流间隔
     });
   </script>
 </body>
