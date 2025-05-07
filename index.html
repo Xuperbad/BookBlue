@@ -1468,26 +1468,76 @@
           // 解析进度数据
           const data = await response.json();
           console.log('从Dropbox加载的进度数据:', data);
-          this.progressData = data;
+
+          // 处理可能的字符串化对象
+          const processedData = {};
+          for (const key in data) {
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+              let value = data[key];
+              // 尝试解析可能被字符串化的对象
+              if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+                try {
+                  value = JSON.parse(value);
+                } catch (e) {
+                  // 如果解析失败，保持原样
+                  console.warn(`无法解析字符串化的对象: ${key}`);
+                }
+              }
+              processedData[key] = value;
+            }
+          }
+
+          this.progressData = processedData;
 
           // 获取当前在读书籍
-          if (data._currentBook) {
-            this.currentReadingBook = data._currentBook;
+          if (processedData._currentBook) {
+            this.currentReadingBook = processedData._currentBook;
             console.log('当前在读书籍:', this.currentReadingBook);
           }
 
           // 获取阅读统计数据
-          if (data._readingStats) {
-            this.readingStats = data._readingStats;
+          if (processedData._readingStats) {
+            // 确保是对象而不是字符串
+            let readingStats = processedData._readingStats;
+            if (typeof readingStats === 'string') {
+              try {
+                readingStats = JSON.parse(readingStats);
+              } catch (e) {
+                console.error('解析阅读统计数据失败:', e);
+                readingStats = { activityData: {}, finishedBooks: [] };
+              }
+            }
+
+            this.readingStats = readingStats;
             console.log('从Dropbox加载阅读统计数据');
 
             // 更新readingTracker的数据
             if (this.readingStats.activityData) {
-              readingTracker.activityData = this.readingStats.activityData;
+              // 确保是对象而不是字符串
+              let activityData = this.readingStats.activityData;
+              if (typeof activityData === 'string') {
+                try {
+                  activityData = JSON.parse(activityData);
+                } catch (e) {
+                  console.error('解析活动数据失败:', e);
+                  activityData = {};
+                }
+              }
+              readingTracker.activityData = activityData;
             }
 
             if (this.readingStats.finishedBooks) {
-              readingTracker.finishedBooks = this.readingStats.finishedBooks;
+              // 确保是数组而不是字符串
+              let finishedBooks = this.readingStats.finishedBooks;
+              if (typeof finishedBooks === 'string') {
+                try {
+                  finishedBooks = JSON.parse(finishedBooks);
+                } catch (e) {
+                  console.error('解析已读完书籍数据失败:', e);
+                  finishedBooks = [];
+                }
+              }
+              readingTracker.finishedBooks = finishedBooks;
             }
 
             // 更新UI
@@ -1525,17 +1575,30 @@
             this.currentReadingBook = window.currentBook;
           }
 
-          // 添加阅读统计数据
-          this.progressData._readingStats = this.readingStats;
+          // 添加阅读统计数据 - 确保深拷贝而不是直接引用
+          this.progressData._readingStats = JSON.parse(JSON.stringify(this.readingStats));
 
           // 进度文件路径 - 与loadFromDropbox保持一致
           const progressFilePath = '/BookBlue_Progress.json';
 
+          // 处理可能导致[object Object]问题的对象
+          const processedData = {};
+          for (const key in this.progressData) {
+            if (Object.prototype.hasOwnProperty.call(this.progressData, key)) {
+              const value = this.progressData[key];
+              if (typeof value === 'object' && value !== null && key !== '_readingStats') {
+                processedData[key] = JSON.stringify(value);
+              } else {
+                processedData[key] = value;
+              }
+            }
+          }
+
           // 将进度数据转换为JSON字符串
-          const progressContent = JSON.stringify(this.progressData, null, 2); // 使用格式化的JSON，便于阅读
+          const progressContent = JSON.stringify(processedData, null, 2); // 使用格式化的JSON，便于阅读
 
           console.log('准备保存进度到Dropbox:', progressFilePath);
-          console.log('进度数据:', JSON.stringify(this.progressData));
+          console.log('进度数据:', progressContent);
 
           // 上传到Dropbox
           console.log('发送保存进度请求...');
@@ -1592,13 +1655,37 @@
           // 同步阅读活动数据
           const activityData = localStorage.getItem('reading-activity-data');
           if (activityData) {
-            this.readingStats.activityData = JSON.parse(activityData);
+            try {
+              const parsedData = JSON.parse(activityData);
+              // 确保是对象而不是字符串
+              if (typeof parsedData === 'object' && parsedData !== null) {
+                this.readingStats.activityData = parsedData;
+              } else if (typeof parsedData === 'string') {
+                // 如果是字符串，尝试再次解析
+                this.readingStats.activityData = JSON.parse(parsedData);
+              }
+            } catch (e) {
+              console.error('解析阅读活动数据失败:', e);
+              this.readingStats.activityData = {};
+            }
           }
 
           // 同步已读完书籍数据
           const finishedBooks = localStorage.getItem('finished-books');
           if (finishedBooks) {
-            this.readingStats.finishedBooks = JSON.parse(finishedBooks);
+            try {
+              const parsedBooks = JSON.parse(finishedBooks);
+              // 确保是数组而不是字符串
+              if (Array.isArray(parsedBooks)) {
+                this.readingStats.finishedBooks = parsedBooks;
+              } else if (typeof parsedBooks === 'string') {
+                // 如果是字符串，尝试再次解析
+                this.readingStats.finishedBooks = JSON.parse(parsedBooks);
+              }
+            } catch (e) {
+              console.error('解析已读完书籍数据失败:', e);
+              this.readingStats.finishedBooks = [];
+            }
           }
         } catch (error) {
           console.error('同步阅读统计数据失败:', error);
@@ -3678,5 +3765,11 @@
       }
     });
   </script>
+
+  <!-- 引入新的数据模型 -->
+  <script src="models.js"></script>
+
+  <!-- 引入应用程序初始化脚本 -->
+  <script src="app-init.js"></script>
 </body>
 </html>
