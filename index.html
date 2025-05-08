@@ -70,60 +70,10 @@
       }
     }
 
-    // 清除测试数据
+    // 清除测试数据 - 已移至数据存储服务
     function clearTestData() {
-      // 检查是否存在测试数据
-      const activityData = localStorage.getItem('reading-activity-data');
-      const finishedBooks = localStorage.getItem('finished-books');
-
-      if (activityData) {
-        try {
-          const data = JSON.parse(activityData);
-          // 检查是否包含测试书籍
-          let hasTestData = false;
-
-          for (const dateStr in data) {
-            for (const bookName in data[dateStr].books) {
-              if (bookName.startsWith('测试书籍')) {
-                hasTestData = true;
-                break;
-              }
-            }
-            if (hasTestData) break;
-          }
-
-          // 如果包含测试数据，清除
-          if (hasTestData) {
-            console.log('清除阅读活动测试数据');
-            localStorage.removeItem('reading-activity-data');
-          }
-        } catch (e) {
-          console.error('解析阅读活动数据失败:', e);
-        }
-      }
-
-      if (finishedBooks) {
-        try {
-          const books = JSON.parse(finishedBooks);
-          // 检查是否包含测试书籍
-          let hasTestData = false;
-
-          for (const book of books) {
-            if (book.startsWith('测试书籍')) {
-              hasTestData = true;
-              break;
-            }
-          }
-
-          // 如果包含测试数据，清除
-          if (hasTestData) {
-            console.log('清除已读完书籍测试数据');
-            localStorage.removeItem('finished-books');
-          }
-        } catch (e) {
-          console.error('解析已读完书籍数据失败:', e);
-        }
-      }
+      // 此功能已移至数据存储服务
+      console.log('清除测试数据功能已移至数据存储服务');
     }
 
     // 页面加载完成后检查库
@@ -142,9 +92,6 @@
 
       // 清除测试数据
       clearTestData();
-
-      // 初始化阅读追踪
-      readingTracker.init();
 
       // 初始化书籍区域拖动滚动功能
       initDragToScroll();
@@ -1071,346 +1018,7 @@
       };
     }
 
-    // 阅读追踪模块 - 用于记录和显示阅读活动
-    const readingTracker = {
-      // 存储阅读活动数据
-      activityData: {},
-
-      // 存储已读完书籍数据
-      finishedBooks: [],
-
-      // 初始化
-      init() {
-        // 从localStorage加载数据
-        this.loadFromLocal();
-
-        // 生成热力图
-        this.generateMonthHeatmap();
-
-        // 更新统计信息
-        this.updateStats();
-
-        // 更新常读书籍列表
-        this.updateFrequentBooks();
-
-        // 初始化已读完对话框
-        this.initFinishDialog();
-      },
-
-      // 从localStorage加载数据
-      loadFromLocal() {
-        try {
-          // 加载阅读活动数据
-          const savedData = localStorage.getItem('reading-activity-data');
-          if (savedData) {
-            this.activityData = JSON.parse(savedData);
-          }
-
-          // 加载已读完书籍数据
-          const finishedData = localStorage.getItem('finished-books');
-          if (finishedData) {
-            this.finishedBooks = JSON.parse(finishedData);
-          }
-        } catch (error) {
-          console.error('加载阅读数据失败:', error);
-          this.activityData = {};
-          this.finishedBooks = [];
-        }
-      },
-
-      // 保存数据到localStorage
-      saveToLocal() {
-        try {
-          // 保存阅读活动数据
-          localStorage.setItem('reading-activity-data', JSON.stringify(this.activityData));
-
-          // 保存已读完书籍数据
-          localStorage.setItem('finished-books', JSON.stringify(this.finishedBooks));
-        } catch (error) {
-          console.error('保存阅读数据失败:', error);
-        }
-      },
-
-      // 记录阅读活动
-      recordActivity(bookName, minutes) {
-        // 获取今天的日期
-        const today = new Date().toISOString().split('T')[0];
-
-        // 确保该日期的数据存在
-        if (!this.activityData[today]) {
-          this.activityData[today] = {
-            totalMinutes: 0,
-            books: {}
-          };
-        }
-
-        // 确保该书的数据存在
-        if (!this.activityData[today].books[bookName]) {
-          this.activityData[today].books[bookName] = 0;
-        }
-
-        // 更新阅读时间
-        this.activityData[today].books[bookName] += minutes;
-        this.activityData[today].totalMinutes += minutes;
-
-        // 保存数据
-        this.saveToLocal();
-
-        // 更新热力图
-        this.updateHeatmap();
-      },
-
-      // 生成当月热力图
-      generateMonthHeatmap() {
-        const heatmapGrid = document.getElementById('heatmap-grid');
-        if (!heatmapGrid) return;
-
-        // 清空网格
-        heatmapGrid.innerHTML = '';
-
-        // 获取当前月份的数据
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
-
-        // 获取当月第一天
-        const firstDay = new Date(year, month, 1);
-        // 获取当月最后一天
-        const lastDay = new Date(year, month + 1, 0);
-
-        // 获取当月第一天是星期几 (0-6, 0是星期日)
-        let firstDayOfWeek = firstDay.getDay();
-        // 调整为星期一为一周的第一天
-        firstDayOfWeek = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
-
-        // 创建日期单元格
-        const totalDays = lastDay.getDate();
-
-        // 添加空白单元格直到第一天
-        for (let i = 0; i < firstDayOfWeek; i++) {
-          const emptyCell = document.createElement('div');
-          emptyCell.className = 'heatmap-day empty';
-          heatmapGrid.appendChild(emptyCell);
-        }
-
-        // 添加当月的日期单元格
-        for (let day = 1; day <= totalDays; day++) {
-          const date = new Date(year, month, day);
-          const dateStr = date.toISOString().split('T')[0];
-
-          // 获取该日期的阅读数据
-          const readingLevel = this.getReadingLevelForDate(dateStr);
-
-          const dayCell = document.createElement('div');
-          dayCell.className = 'heatmap-day';
-          dayCell.setAttribute('data-date', dateStr);
-          dayCell.setAttribute('data-level', readingLevel);
-          dayCell.setAttribute('title', `${dateStr}: ${this.getReadingTimeForDate(dateStr)}`);
-
-          heatmapGrid.appendChild(dayCell);
-        }
-      },
-
-      // 更新热力图
-      updateHeatmap() {
-        // 获取今天的日期
-        const today = new Date().toISOString().split('T')[0];
-
-        // 查找今天的单元格
-        const todayCell = document.querySelector(`.heatmap-day[data-date="${today}"]`);
-        if (todayCell) {
-          // 获取今天的阅读级别
-          const readingLevel = this.getReadingLevelForDate(today);
-
-          // 更新单元格
-          todayCell.setAttribute('data-level', readingLevel);
-          todayCell.setAttribute('title', `${today}: ${this.getReadingTimeForDate(today)}`);
-        } else {
-          // 如果找不到今天的单元格，可能是月份已经变化，重新生成热力图
-          this.generateMonthHeatmap();
-        }
-      },
-
-      // 根据日期获取阅读级别 (0-4)
-      getReadingLevelForDate(dateStr) {
-        const dayData = this.activityData[dateStr] || { totalMinutes: 0 };
-
-        if (dayData.totalMinutes === 0) return 0;
-        if (dayData.totalMinutes < 15) return 1;
-        if (dayData.totalMinutes < 30) return 2;
-        if (dayData.totalMinutes < 60) return 3;
-        return 4;
-      },
-
-      // 获取日期的阅读时间描述
-      getReadingTimeForDate(dateStr) {
-        const dayData = this.activityData[dateStr] || { totalMinutes: 0 };
-
-        if (dayData.totalMinutes === 0) {
-          return '无阅读记录';
-        }
-
-        // 格式化时间
-        const hours = Math.floor(dayData.totalMinutes / 60);
-        const minutes = dayData.totalMinutes % 60;
-
-        if (hours > 0) {
-          return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}`;
-        }
-        return `${minutes}分钟`;
-      },
-
-      // 更新统计信息
-      updateStats() {
-        // 获取当前月份
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
-
-        // 计算本月有阅读记录的天数
-        let readingDays = 0;
-        let totalMinutes = 0;
-
-        // 遍历所有日期
-        for (const dateStr in this.activityData) {
-          const date = new Date(dateStr);
-
-          // 计算总阅读时间
-          totalMinutes += this.activityData[dateStr].totalMinutes;
-
-          // 如果是当月的日期，计入阅读天数
-          if (date.getFullYear() === year && date.getMonth() === month && this.activityData[dateStr].totalMinutes > 0) {
-            readingDays++;
-          }
-        }
-
-        // 计算总阅读小时数
-        const totalHours = (totalMinutes / 60).toFixed(1);
-
-        // 获取已读完书籍数量
-        const finishedCount = this.finishedBooks.length;
-
-        // 更新DOM
-        document.getElementById('reading-days').textContent = `${readingDays}天`;
-        document.getElementById('reading-hours').textContent = `${totalHours}小时`;
-        document.getElementById('books-finished').textContent = `${finishedCount}本`;
-      },
-
-      // 更新常读书籍列表
-      updateFrequentBooks() {
-        // 创建书籍阅读时间统计
-        const bookStats = {};
-
-        // 遍历所有日期的阅读记录
-        for (const dateStr in this.activityData) {
-          const dayData = this.activityData[dateStr];
-
-          // 遍历该日期的所有书籍
-          for (const bookName in dayData.books) {
-            if (!bookStats[bookName]) {
-              bookStats[bookName] = 0;
-            }
-
-            // 累加阅读时间
-            bookStats[bookName] += dayData.books[bookName];
-          }
-        }
-
-        // 转换为数组并排序
-        const sortedBooks = Object.entries(bookStats)
-          .sort((a, b) => b[1] - a[1]) // 按阅读时间降序排序
-          .slice(0, 3); // 只取前三本
-
-        // 获取常读书籍列表容器
-        const frequentBooksList = document.getElementById('frequent-books-list');
-        frequentBooksList.innerHTML = '';
-
-        // 添加书籍到列表
-        sortedBooks.forEach(([bookName, minutes]) => {
-          const bookItem = document.createElement('div');
-          bookItem.className = 'frequent-book-item';
-
-          // 格式化时间
-          const hours = (minutes / 60).toFixed(1);
-
-          // 创建书名元素
-          const nameElement = document.createElement('div');
-          nameElement.className = 'frequent-book-name';
-          nameElement.textContent = bookName.replace('.epub', '');
-
-          // 创建时间元素
-          const timeElement = document.createElement('div');
-          timeElement.className = 'frequent-book-time';
-          timeElement.textContent = `${hours}h`;
-
-          // 添加到书籍项
-          bookItem.appendChild(nameElement);
-          bookItem.appendChild(timeElement);
-
-          // 添加到列表
-          frequentBooksList.appendChild(bookItem);
-        });
-
-        // 如果没有书籍，显示提示信息
-        if (sortedBooks.length === 0) {
-          const emptyItem = document.createElement('div');
-          emptyItem.className = 'frequent-book-item';
-          emptyItem.textContent = '暂无阅读记录';
-          frequentBooksList.appendChild(emptyItem);
-        }
-      },
-
-      // 初始化已读完对话框
-      initFinishDialog() {
-        const dialog = document.getElementById('finish-dialog');
-        const yesButton = document.getElementById('finish-yes');
-        const noButton = document.getElementById('finish-no');
-
-        // 点击"是"按钮
-        yesButton.addEventListener('click', () => {
-          // 标记当前书籍为已读完
-          if (window.currentBook) {
-            this.markBookAsFinished(window.currentBook);
-          }
-
-          // 隐藏对话框
-          dialog.style.display = 'none';
-        });
-
-        // 点击"否"按钮
-        noButton.addEventListener('click', () => {
-          // 隐藏对话框
-          dialog.style.display = 'none';
-        });
-      },
-
-      // 标记书籍为已读完
-      markBookAsFinished(bookName) {
-        // 检查书籍是否已经标记为已读完
-        if (!this.finishedBooks.includes(bookName)) {
-          // 添加到已读完书籍列表
-          this.finishedBooks.push(bookName);
-
-          // 保存数据
-          this.saveToLocal();
-
-          // 更新统计信息
-          this.updateStats();
-
-          console.log(`已将书籍标记为已读完: ${bookName}`);
-        }
-      },
-
-      // 检查是否到达书籍末尾
-      checkBookEnd(currentLocation, totalLocations) {
-        // 如果当前位置接近总位置的95%以上，认为已到达末尾
-        if (currentLocation > totalLocations * 0.95) {
-          // 显示已读完对话框
-          const dialog = document.getElementById('finish-dialog');
-          dialog.style.display = 'block';
-        }
-      }
-    };
+    // 阅读追踪模块已移至 models.js 和 app-init.js
 
     // 进度同步模块 - 用于在Dropbox和本地之间同步阅读进度
     const progressSync = {
@@ -2136,27 +1744,21 @@
         // 更新 UI 状态
         updateDropboxAuthUI(true);
 
-        // 尝试加载阅读进度和上次阅读的书籍
+        // 初始化数据存储
         try {
-          console.log('授权成功后尝试从Dropbox加载阅读进度...');
+          console.log('授权成功后初始化数据存储...');
 
-          // 加载阅读进度
-          await progressSync.loadFromDropbox();
+          // 初始化数据存储
+          await dataStore.init();
 
-          // 尝试加载上次阅读的书籍
-          const bookLoaded = await progressSync.loadCurrentBook();
-
-          if (bookLoaded) {
-            console.log('成功加载上次阅读的书籍');
-            // 不显示成功消息，因为已经加载了书籍
-          } else {
-            console.log('没有找到上次阅读的书籍或加载失败');
-            // 显示成功消息
-            alert('成功连接到 Dropbox！');
-          }
-        } catch (error) {
-          console.error('加载阅读进度或书籍时出错:', error);
           // 显示成功消息
+          alert('成功连接到 Dropbox！');
+
+          // 注意：书籍加载逻辑已移至 app-init.js
+          // 这里不再重复加载书籍，避免重复操作
+          // 页面刷新后，app-init.js 会自动加载书籍
+        } catch (error) {
+          console.error('初始化数据存储时出错:', error);
           alert('成功连接到 Dropbox！');
         }
 
@@ -2176,8 +1778,8 @@
         if (connectContainer) connectContainer.style.display = 'none';
         if (booksContainer) booksContainer.style.display = 'flex';
 
-        // 加载 Dropbox 中的书籍
-        loadDropboxBooks();
+        // 注意：书籍加载已移至 app-init.js
+        // 这里不再重复加载书籍，避免重复操作
       } else {
         // 未授权状态：显示连接按钮，隐藏书籍容器
         if (connectContainer) connectContainer.style.display = 'flex';
@@ -2296,84 +1898,7 @@
       return path;
     }
 
-    // 封面缓存管理
-    const coverCache = {
-      async get(bookId) {
-        try {
-          return localStorage.getItem(`book-cover-${bookId}`);
-        } catch (e) {
-          console.error('获取封面缓存失败:', e);
-          return null;
-        }
-      },
-
-      async set(bookId, coverUrl) {
-        try {
-          localStorage.setItem(`book-cover-${bookId}`, coverUrl);
-        } catch (e) {
-          console.error('保存封面缓存失败:', e);
-        }
-      }
-    };
-
-    // 从EPUB文件提取封面
-    async function extractCoverFromEpub(file) {
-      try {
-        console.log('开始提取封面:', file.name);
-
-        // 检查是否已经有缓存的封面
-        const bookId = file.name;
-        const cachedCover = await coverCache.get(bookId);
-        if (cachedCover) {
-          console.log('使用缓存的封面:', bookId);
-          return cachedCover;
-        }
-
-        // 没有缓存，需要提取封面
-        console.log('没有缓存的封面，开始提取');
-
-        // 创建临时的Book对象
-        const book = ePub();
-
-        // 读取文件为ArrayBuffer
-        const arrayBuffer = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = e => resolve(e.target.result);
-          reader.onerror = reject;
-          reader.readAsArrayBuffer(file);
-        });
-
-        // 打开EPUB文件
-        await book.open(arrayBuffer);
-
-        // 尝试获取封面
-        const coverPath = await book.loaded.cover;
-        if (!coverPath) {
-          console.log('EPUB文件没有封面:', file.name);
-          return null;
-        }
-
-        console.log('找到封面路径:', coverPath);
-
-        // 获取封面URL
-        const coverUrl = await book.archive.createUrl(coverPath, { base64: true });
-        if (!coverUrl) {
-          console.log('无法创建封面URL');
-          return null;
-        }
-
-        console.log('成功提取封面URL');
-
-        // 缓存封面URL
-        await coverCache.set(bookId, coverUrl);
-        return coverUrl;
-      } catch (error) {
-        console.error('提取封面过程中出错:', error);
-        return null;
-      }
-    }
-
-    // 从Dropbox下载文件并提取封面
+    // 从Dropbox下载文件并提取封面 - 使用 dataStore 中的方法
     async function extractCoverFromDropbox(path) {
       try {
         const accessToken = localStorage.getItem('dropboxAccessToken');
@@ -2382,42 +1907,30 @@
           return null;
         }
 
-        // 检查缓存
+        // 使用 dataStore 中的方法
         const bookId = path.split('/').pop();
-        const cachedCover = await coverCache.get(bookId);
+
+        // 首先尝试从缓存获取封面
+        const cachedCover = await dataStore.getCoverFromCache(bookId);
         if (cachedCover) {
-          console.log('使用缓存的Dropbox封面:', bookId);
           return cachedCover;
         }
 
-        console.log('从Dropbox下载文件以提取封面:', path);
+        // 如果缓存中没有封面，加载书籍文件并提取封面
+        console.log('从 Dropbox 加载书籍以提取封面:', path);
 
-        // 使用Dropbox API下载文件
-        const response = await fetch('https://content.dropboxapi.com/2/files/download', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/octet-stream',
-            'Dropbox-API-Arg': httpHeaderSafeJson({ path: path })
-          }
-        });
+        // 确保路径是正确的格式
+        const safePath = path.startsWith('/') ? path : `/${path}`;
 
-        if (!response.ok) {
-          console.error('从Dropbox下载文件失败:', response.status);
+        // 加载书籍文件
+        const file = await dataStore.loadBookFile(safePath);
+        if (!file) {
+          console.error('无法加载书籍文件以提取封面');
           return null;
         }
 
-        // 获取文件内容并创建File对象
-        const arrayBuffer = await response.arrayBuffer();
-        const fileName = path.split('/').pop();
-        const file = new File(
-          [new Blob([arrayBuffer], {type: 'application/epub+zip'})],
-          fileName,
-          {type: 'application/epub+zip'}
-        );
-
         // 提取封面
-        return await extractCoverFromEpub(file);
+        return await dataStore.extractCoverFromEpub(file);
       } catch (error) {
         console.error('从Dropbox提取封面失败:', error);
         return null;
@@ -2475,8 +1988,8 @@
         closeDrawer();
       });
 
-      // 异步加载封面
-      extractCoverFromDropbox(book.path_lower).then(coverUrl => {
+      // 异步加载封面 - 直接从缓存获取，避免重复加载书籍
+      dataStore.getCoverFromCache(book.name).then(coverUrl => {
         // 移除加载指示器
         if (loadingIndicator.parentNode) {
           loadingIndicator.parentNode.removeChild(loadingIndicator);
@@ -2490,100 +2003,33 @@
           cover.style.backgroundRepeat = 'no-repeat';
           cover.textContent = '';
         } else {
-          // 如果没有封面，显示首字母
-          cover.textContent = bookName.charAt(0).toUpperCase();
-          cover.style.display = 'flex';
-          cover.style.alignItems = 'center';
-          cover.style.justifyContent = 'center';
-          cover.style.fontSize = '24px';
+          // 如果缓存中没有封面，尝试提取封面
+          extractCoverFromDropbox(book.path_lower).then(extractedCoverUrl => {
+            if (extractedCoverUrl) {
+              // 设置封面图片
+              cover.style.backgroundImage = `url(${extractedCoverUrl})`;
+              cover.style.backgroundSize = 'cover';
+              cover.style.backgroundPosition = 'center';
+              cover.style.backgroundRepeat = 'no-repeat';
+              cover.textContent = '';
+            } else {
+              // 如果没有封面，显示首字母
+              cover.textContent = bookName.charAt(0).toUpperCase();
+              cover.style.display = 'flex';
+              cover.style.alignItems = 'center';
+              cover.style.justifyContent = 'center';
+              cover.style.fontSize = '24px';
+            }
+          });
         }
       });
 
       return card;
     }
 
-    // IndexedDB缓存管理
-    const bookCache = {
-      // 数据库名称和版本
-      dbName: 'BookBlueCache',
-      dbVersion: 1,
-      storeName: 'books',
+    // 注意：书籍缓存功能已移至 models.js 中的 dataStore 对象
 
-      // 打开数据库连接
-      openDB() {
-        return new Promise((resolve, reject) => {
-          const request = indexedDB.open(this.dbName, this.dbVersion);
-
-          // 如果数据库不存在或版本升级，创建对象存储
-          request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains(this.storeName)) {
-              db.createObjectStore(this.storeName);
-            }
-          };
-
-          request.onsuccess = (event) => {
-            resolve(event.target.result);
-          };
-
-          request.onerror = (event) => {
-            console.error('打开IndexedDB失败:', event.target.error);
-            reject(event.target.error);
-          };
-        });
-      },
-
-      // 从缓存获取书籍
-      async getBook(key) {
-        try {
-          const db = await this.openDB();
-          return new Promise((resolve, reject) => {
-            const transaction = db.transaction([this.storeName], 'readonly');
-            const store = transaction.objectStore(this.storeName);
-            const request = store.get(key);
-
-            request.onsuccess = (event) => {
-              resolve(event.target.result);
-            };
-
-            request.onerror = (event) => {
-              console.error('从缓存获取书籍失败:', event.target.error);
-              reject(event.target.error);
-            };
-          });
-        } catch (error) {
-          console.error('缓存操作失败:', error);
-          return null;
-        }
-      },
-
-      // 将书籍保存到缓存
-      async saveBook(key, file) {
-        try {
-          const db = await this.openDB();
-          return new Promise((resolve, reject) => {
-            const transaction = db.transaction([this.storeName], 'readwrite');
-            const store = transaction.objectStore(this.storeName);
-            const request = store.put(file, key);
-
-            request.onsuccess = () => {
-              console.log(`书籍已缓存: ${key}`);
-              resolve(true);
-            };
-
-            request.onerror = (event) => {
-              console.error('缓存书籍失败:', event.target.error);
-              reject(event.target.error);
-            };
-          });
-        } catch (error) {
-          console.error('缓存操作失败:', error);
-          return false;
-        }
-      }
-    };
-
-    // 从 Dropbox 加载书籍
+    // 从 Dropbox 加载书籍 - 使用 dataStore 中的方法
     async function loadBookFromDropbox(path) {
       try {
         const accessToken = localStorage.getItem('dropboxAccessToken');
@@ -2592,61 +2038,16 @@
           return;
         }
 
-        // 生成缓存键
-        const cacheKey = `dropbox-${path}`;
+        console.log(`从 Dropbox 加载书籍: ${path}`);
 
-        // 尝试从缓存加载
-        console.log(`检查缓存中是否有书籍: ${path}`);
-        const cachedBook = await bookCache.getBook(cacheKey);
+        // 确保路径是正确的格式
+        const safePath = path.startsWith('/') ? path : `/${path}`;
 
-        if (cachedBook) {
-          console.log(`使用缓存的书籍: ${path}`);
-          window.handleFile(cachedBook);
-          return;
-        }
+        // 使用 dataStore 中的方法加载书籍
+        const file = await dataStore.loadBookFile(safePath);
 
-        console.log(`缓存中没有找到书籍，从 Dropbox 加载: ${path}`);
-
-        // 下载文件
-        const response = await fetch('https://content.dropboxapi.com/2/files/download', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/octet-stream',
-            'Dropbox-API-Arg': httpHeaderSafeJson({ path: path })
-          }
-        });
-
-        if (!response.ok) {
-          // 尝试获取更详细的错误信息
-          let errorMessage = `Dropbox API 错误: ${response.status}`;
-          try {
-            const errorData = await response.text();
-            console.error('Dropbox API 错误详情:', errorData);
-            errorMessage += ` - ${errorData}`;
-          } catch (e) {
-            console.error('无法解析错误详情:', e);
-          }
-          throw new Error(errorMessage);
-        }
-
-        // 获取文件内容并创建File对象
-        const arrayBuffer = await response.arrayBuffer();
-        const fileName = path.split('/').pop();
-        const file = new File(
-          [new Blob([arrayBuffer], {type: 'application/epub+zip'})],
-          fileName,
-          {type: 'application/epub+zip'}
-        );
-
-        console.log('创建的File对象:', file);
-
-        // 将书籍保存到缓存
-        try {
-          await bookCache.saveBook(cacheKey, file);
-          console.log(`书籍已保存到缓存: ${fileName}`);
-        } catch (cacheError) {
-          console.warn('保存书籍到缓存失败，但将继续加载书籍:', cacheError);
+        if (!file) {
+          throw new Error('无法加载书籍文件');
         }
 
         // 处理文件
@@ -2822,14 +2223,12 @@
             // 如果已连接 Dropbox，上传到 Dropbox
             const accessToken = localStorage.getItem('dropboxAccessToken');
             if (accessToken) {
-              // 先提取封面，然后上传到Dropbox
-              extractCoverFromEpub(file).then(() => {
-                uploadToDropbox(file);
-              });
+              // 直接上传到Dropbox，上传函数中会处理封面提取
+              uploadToDropbox(file);
             } else {
               // 否则直接处理文件
-              // 先提取封面，然后处理文件
-              extractCoverFromEpub(file).then(() => {
+              // 使用 dataStore 提取封面，然后处理文件
+              dataStore.extractCoverFromEpub(file).then(() => {
                 window.handleFile(file);
               });
             }
@@ -2840,7 +2239,7 @@
       }
     }
 
-    // 上传文件到 Dropbox
+    // 上传文件到 Dropbox - 使用 dataStore 中的方法
     async function uploadToDropbox(file) {
       try {
         const accessToken = localStorage.getItem('dropboxAccessToken');
@@ -2885,6 +2284,12 @@
 
         console.log('文件上传成功');
 
+        // 保存到缓存
+        await dataStore.saveBookToCache(file.name, arrayBuffer);
+
+        // 预加载封面
+        await dataStore.extractCoverFromEpub(file);
+
         // 处理文件
         window.handleFile(file);
 
@@ -2922,26 +2327,8 @@
         return;
       }
 
-      // 如果已授权Dropbox，尝试加载阅读进度和上次阅读的书籍
-      if (isAuthorized) {
-        try {
-          console.log('尝试从Dropbox加载阅读进度...');
-
-          // 加载阅读进度
-          await progressSync.loadFromDropbox();
-
-          // 尝试加载上次阅读的书籍
-          const bookLoaded = await progressSync.loadCurrentBook();
-
-          if (bookLoaded) {
-            console.log('成功加载上次阅读的书籍');
-          } else {
-            console.log('没有找到上次阅读的书籍或加载失败');
-          }
-        } catch (error) {
-          console.error('加载阅读进度或书籍时出错:', error);
-        }
-      }
+      // 注意：书籍加载逻辑已移至 app-init.js
+      // 这里不再重复加载书籍，避免重复操作
       // 获取DOM元素
       const dropArea = document.getElementById('drop-area');
       const epubViewer = document.getElementById('epub-viewer');
@@ -2978,8 +2365,13 @@
 
           // 保存阅读进度到本地，但不保存到Dropbox（避免初始加载时频繁保存）
           if (currentBook) {
-            // 只保存到本地，不保存到Dropbox
-            progressSync.updateBookProgress(currentBook, currentLocation.toString(), false);
+            // 只保存到本地存储，不触发保存到Dropbox
+            localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+
+            // 更新dataStore中的进度，但不立即保存
+            if (dataStore && dataStore.data && dataStore.data.books && dataStore.data.books[currentBook]) {
+              dataStore.data.books[currentBook].progress = currentLocation;
+            }
           }
         }).catch(error => {
           console.error('页面显示错误:', error);
@@ -3049,6 +2441,9 @@
 
       // 将updateProgressInfo函数添加到window对象，使其在所有作用域中可用
       window.updateProgressInfo = updateProgressInfo;
+
+      // 将updatePages函数添加到window对象，使其在所有作用域中可用
+      window.updatePages = updatePages;
 
       // 加载保存的笔记
       try {
@@ -3260,14 +2655,17 @@
         try {
           // 保存当前笔记
           if (currentBook && notesTextarea) {
-            currentNotes[currentBook] = notesTextarea.value;
-            localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
+            dataStore.saveNote(currentBook, notesTextarea.value);
           }
 
-          // 保存当前阅读进度到本地和Dropbox
+          // 保存当前阅读进度
           if (currentBook && currentLocation >= 0) {
-            // 使用进度同步模块更新进度，并指定保存到云端
-            progressSync.updateBookProgress(currentBook, currentLocation.toString(), true);
+            // 使用新的数据存储服务更新进度，立即保存
+            dataStore.updateProgress(currentBook, currentLocation, true);
+
+            // 设置当前书籍
+            dataStore.setCurrentBook(currentBook);
+            console.log(`设置当前书籍: ${currentBook}`);
           }
 
           // 清空容器 - 这是最重要的部分
@@ -3323,6 +2721,12 @@
 
         // 设置当前书籍
         currentBook = file.name;
+
+        // 使用新的数据存储服务设置当前书籍
+        if (dataStore) {
+          dataStore.setCurrentBook(currentBook);
+          console.log(`设置当前书籍: ${currentBook}`);
+        }
 
         // 隐藏拖放区域
         dropArea.classList.add('hidden');
@@ -3483,8 +2887,8 @@
                           window.saveProgressTimer = setTimeout(() => {
                             console.log(`用户停留超过2秒，保存阅读进度到Dropbox: ${currentBook}, 位置: ${currentLocation}`);
 
-                            // 使用进度同步模块更新进度，并指定保存到云端
-                            progressSync.updateBookProgress(currentBook, currentLocation.toString(), true);
+                            // 使用新的数据存储服务更新进度
+                            dataStore.updateProgress(currentBook, currentLocation);
                           }, 2000); // 2秒后触发保存
                         } else {
                           console.warn('无法保存进度：currentBook未定义');
@@ -3615,10 +3019,8 @@
           }
 
           // 加载笔记
-          if (currentNotes[currentBook]) {
-            notesTextarea.value = currentNotes[currentBook];
-          } else {
-            notesTextarea.value = '';
+          if (notesTextarea) {
+            notesTextarea.value = dataStore.getNote(currentBook);
           }
 
           // 设置键盘导航
@@ -3665,26 +3067,17 @@
             const locationCfi = location.start.cfi;
             const newLocation = book.locations.locationFromCfi(locationCfi);
 
-            // 只有位置变化时才更新
-            if (newLocation !== currentLocation) {
-              currentLocation = newLocation;
+            // 更新当前位置
+            currentLocation = newLocation;
 
-              // 更新进度显示
-              window.updateProgressInfo();
+            // 更新进度显示
+            window.updateProgressInfo();
 
-              // 保存阅读进度到本地和Dropbox
-              if (currentBook) {
-                // 使用进度同步模块更新进度
-                progressSync.updateBookProgress(currentBook, currentLocation.toString());
-
-                // 记录阅读活动 - 每次翻页记录1分钟的阅读时间
-                readingTracker.recordActivity(currentBook, 1);
-
-                // 检查是否到达书籍末尾
-                if (book.locations && book.locations.total) {
-                  readingTracker.checkBookEnd(newLocation, book.locations.total);
-                }
-              }
+            // 保存阅读进度，使用防抖保存
+            if (currentBook && dataStore) {
+              // 使用新的数据存储服务更新进度，不立即保存
+              console.log(`更新阅读进度: ${currentBook}, 位置: ${currentLocation}`);
+              dataStore.updateProgress(currentBook, currentLocation, false);
             }
           }
         } catch (e) {
@@ -3700,6 +3093,12 @@
         rendition.prev().then(function() {
           // 导航成功后更新当前位置
           setTimeout(updateReadingPosition, 100);
+
+          // 记录阅读活动
+          if (currentBook && dataStore) {
+            dataStore.recordReading(currentBook, 1);
+            console.log('记录阅读活动 - 向前翻页');
+          }
         }).catch(function() {
           // 已经是第一页
         });
@@ -3713,6 +3112,22 @@
         rendition.next().then(function() {
           // 导航成功后更新当前位置
           setTimeout(updateReadingPosition, 100);
+
+          // 记录阅读活动
+          if (currentBook && dataStore) {
+            dataStore.recordReading(currentBook, 1);
+            console.log('记录阅读活动 - 向后翻页');
+
+            // 检查是否到达书籍末尾
+            if (book.locations && book.locations.total && currentLocation) {
+              if (currentLocation > book.locations.total * 0.95) {
+                const dialog = document.getElementById('finish-dialog');
+                if (dialog) {
+                  dialog.style.display = 'block';
+                }
+              }
+            }
+          }
         }).catch(function() {
           // 已经是最后一页
         });
@@ -3763,6 +3178,23 @@
         handleFileInternal(window._pendingFile);
         window._pendingFile = null;
       }
+
+      // 添加页面关闭前保存数据的事件监听器
+      window.addEventListener('beforeunload', function() {
+        console.log('页面即将关闭，保存数据...');
+
+        // 保存当前笔记
+        if (currentBook && notesTextarea) {
+          dataStore.saveNote(currentBook, notesTextarea.value);
+        }
+
+        // 保存当前阅读进度和当前书籍，立即保存
+        if (currentBook && currentLocation >= 0) {
+          dataStore.updateProgress(currentBook, currentLocation, true);
+          dataStore.setCurrentBook(currentBook);
+          console.log(`页面关闭前设置当前书籍: ${currentBook}`);
+        }
+      });
     });
   </script>
 
