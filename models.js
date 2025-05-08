@@ -27,10 +27,179 @@ const dataStore = {
     try {
       // 从 Dropbox 加载数据
       await this.loadFromDropbox();
+
+      // 更新UI上的阅读统计数据
+      this.updateReadingUI();
+
       return true;
     } catch (error) {
       console.error('初始化数据存储失败:', error);
       return false;
+    }
+  },
+
+  // 更新UI上的阅读统计数据
+  updateReadingUI() {
+    try {
+      // 更新阅读天数
+      const readingDaysElement = document.getElementById('reading-days');
+      if (readingDaysElement) {
+        const days = Object.keys(this.data.readingStats.minutes).length;
+        readingDaysElement.textContent = `${days}天`;
+      }
+
+      // 更新阅读小时数
+      const readingHoursElement = document.getElementById('reading-hours');
+      if (readingHoursElement) {
+        let totalMinutes = 0;
+        Object.values(this.data.readingStats.minutes).forEach(day => {
+          totalMinutes += day.total || 0;
+        });
+        const hours = Math.floor(totalMinutes / 60);
+        readingHoursElement.textContent = `${hours}小时`;
+      }
+
+      // 更新已读完书籍数
+      const booksFinishedElement = document.getElementById('books-finished');
+      if (booksFinishedElement) {
+        const finished = this.data.readingStats.finished.length;
+        booksFinishedElement.textContent = `${finished}本`;
+      }
+
+      // 更新热力图
+      this.generateMonthHeatmap();
+
+      // 更新常读书籍列表
+      this.updateFrequentBooks();
+    } catch (error) {
+      console.error('更新阅读统计UI失败:', error);
+    }
+  },
+
+  // 生成月度热力图
+  generateMonthHeatmap() {
+    const heatmapGrid = document.getElementById('heatmap-grid');
+    if (!heatmapGrid) return;
+
+    // 清空现有内容
+    heatmapGrid.innerHTML = '';
+
+    // 获取当前日期
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    // 创建一个日期对象，设置为当月1日
+    const firstDay = new Date(currentYear, currentMonth, 1);
+
+    // 获取当月第一天是星期几（0-6，0表示星期日）
+    const firstDayOfWeek = firstDay.getDay();
+
+    // 获取当月天数
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+    // 创建前导空白格
+    for (let i = 0; i < (firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1); i++) {
+      const emptyDay = document.createElement('div');
+      emptyDay.className = 'heatmap-day empty';
+      heatmapGrid.appendChild(emptyDay);
+    }
+
+    // 创建当月日期格
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayElement = document.createElement('div');
+      dayElement.className = 'heatmap-day';
+
+      // 格式化日期为YYYY-MM-DD
+      const date = new Date(currentYear, currentMonth, day);
+      const dateString = date.toISOString().split('T')[0];
+
+      // 获取当天的阅读分钟数
+      const dayData = this.data.readingStats.minutes[dateString];
+      const minutes = dayData ? dayData.total || 0 : 0;
+
+      // 根据阅读时间设置热力等级
+      let level = 0;
+      if (minutes > 0) {
+        if (minutes < 30) level = 1;
+        else if (minutes < 60) level = 2;
+        else if (minutes < 120) level = 3;
+        else level = 4;
+      }
+
+      dayElement.setAttribute('data-level', level);
+      dayElement.setAttribute('title', `${dateString}: ${minutes}分钟`);
+
+      // 如果是今天，添加特殊样式
+      if (day === now.getDate()) {
+        dayElement.style.border = '1px solid rgba(255, 255, 255, 0.5)';
+      }
+
+      heatmapGrid.appendChild(dayElement);
+    }
+  },
+
+  // 更新常读书籍列表
+  updateFrequentBooks() {
+    const frequentBooksList = document.getElementById('frequent-books-list');
+    if (!frequentBooksList) return;
+
+    // 清空现有内容
+    frequentBooksList.innerHTML = '';
+
+    // 计算每本书的总阅读时间
+    const bookTimes = {};
+    Object.values(this.data.readingStats.minutes).forEach(day => {
+      if (day.books) {
+        Object.entries(day.books).forEach(([bookId, minutes]) => {
+          if (!bookTimes[bookId]) bookTimes[bookId] = 0;
+          bookTimes[bookId] += minutes;
+        });
+      }
+    });
+
+    // 转换为数组并排序
+    const sortedBooks = Object.entries(bookTimes)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5); // 只显示前5本
+
+    // 添加到列表
+    sortedBooks.forEach(([bookId, minutes]) => {
+      const bookItem = document.createElement('div');
+      bookItem.className = 'frequent-book-item';
+
+      const bookName = document.createElement('div');
+      bookName.className = 'frequent-book-name';
+      bookName.textContent = bookId.replace('.epub', '');
+
+      const bookTime = document.createElement('div');
+      bookTime.className = 'frequent-book-time';
+
+      // 格式化时间
+      let timeText = '';
+      if (minutes >= 60) {
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        timeText = `${hours}小时${remainingMinutes > 0 ? remainingMinutes + '分钟' : ''}`;
+      } else {
+        timeText = `${minutes}分钟`;
+      }
+
+      bookTime.textContent = timeText;
+
+      bookItem.appendChild(bookName);
+      bookItem.appendChild(bookTime);
+      frequentBooksList.appendChild(bookItem);
+    });
+
+    // 如果没有阅读记录，显示提示
+    if (sortedBooks.length === 0) {
+      const emptyMessage = document.createElement('div');
+      emptyMessage.textContent = '暂无阅读记录';
+      emptyMessage.style.textAlign = 'center';
+      emptyMessage.style.color = 'rgba(255, 255, 255, 0.5)';
+      emptyMessage.style.padding = '10px 0';
+      frequentBooksList.appendChild(emptyMessage);
     }
   },
 
@@ -77,6 +246,9 @@ const dataStore = {
       if (loadedData.currentBookId) this.data.currentBookId = loadedData.currentBookId;
 
       console.log('从 Dropbox 加载数据成功');
+
+      // 更新UI
+      this.updateReadingUI();
     } catch (error) {
       console.error('从 Dropbox 加载数据失败:', error);
     }
@@ -118,7 +290,7 @@ const dataStore = {
         return false;
       }
 
-      console.log('数据已保存到 Dropbox');
+      // 成功保存，但不打印消息，避免与防抖保存消息重复
       return true;
     } catch (error) {
       console.error('保存数据到 Dropbox 失败:', error);
@@ -225,7 +397,11 @@ const dataStore = {
     this.data.readingStats.minutes[today].books[id] += minutes;
     this.data.readingStats.minutes[today].total += minutes;
 
+    // 保存数据
     this.debouncedSave();
+
+    // 更新UI
+    this.updateReadingUI();
   },
 
   // 标记书籍为已读完
@@ -235,6 +411,9 @@ const dataStore = {
     if (!this.data.readingStats.finished.includes(id)) {
       this.data.readingStats.finished.push(id);
       this.debouncedSave();
+
+      // 更新UI
+      this.updateReadingUI();
     }
   },
 

@@ -2878,18 +2878,8 @@
                         if (currentBook) {
                           localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
 
-                          // 清除之前的保存计时器（如果有）
-                          if (window.saveProgressTimer) {
-                            clearTimeout(window.saveProgressTimer);
-                          }
-
-                          // 设置新的计时器，用户停留2秒后再保存到Dropbox
-                          window.saveProgressTimer = setTimeout(() => {
-                            console.log(`用户停留超过2秒，保存阅读进度到Dropbox: ${currentBook}, 位置: ${currentLocation}`);
-
-                            // 使用新的数据存储服务更新进度
-                            dataStore.updateProgress(currentBook, currentLocation);
-                          }, 2000); // 2秒后触发保存
+                          // 注意：保存进度的逻辑已移至 updateReadingPosition 函数
+                          // 这里不再重复保存，避免重复操作
                         } else {
                           console.warn('无法保存进度：currentBook未定义');
                         }
@@ -3076,7 +3066,6 @@
             // 保存阅读进度，使用防抖保存
             if (currentBook && dataStore) {
               // 使用新的数据存储服务更新进度，不立即保存
-              console.log(`更新阅读进度: ${currentBook}, 位置: ${currentLocation}`);
               dataStore.updateProgress(currentBook, currentLocation, false);
             }
           }
