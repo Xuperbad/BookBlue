@@ -313,24 +313,119 @@ const dataStore = {
     }, 2000); // 2秒后保存
   },
 
+  // 从EPUB提取ISBN
+  async extractISBNFromEpub(file) {
+    try {
+      const book = ePub();
+      const arrayBuffer = await file.arrayBuffer();
+      await book.open(arrayBuffer);
+      const metadata = await book.loaded.metadata;
+
+      // 尝试从identifier中提取ISBN
+      if (metadata.identifier) {
+        let identifiers = Array.isArray(metadata.identifier) ?
+          metadata.identifier : [metadata.identifier];
+
+        for (let id of identifiers) {
+          if (typeof id === 'string' && id.toLowerCase().includes('isbn')) {
+            // 提取数字和X
+            const isbn = id.replace(/[^0-9X]/g, '');
+            if (isbn && (isbn.length === 10 || isbn.length === 13)) {
+              console.log(`找到ISBN: ${isbn}`);
+              return isbn;
+            }
+          }
+        }
+      }
+
+      // 如果没有找到ISBN，返回null
+      console.log('未找到ISBN');
+      return null;
+    } catch (error) {
+      console.error('提取ISBN失败:', error);
+      return null;
+    }
+  },
+
+  // 生成书籍ID
+  async generateBookId(file) {
+    // 首先尝试提取ISBN
+    const isbn = await this.extractISBNFromEpub(file);
+    if (isbn) {
+      return `isbn:${isbn}`;
+    }
+
+    // 如果没有ISBN，回退到使用文件名
+    return `file:${file.name}`;
+  },
+
   // 添加或更新书籍
-  addBook(id, title, path) {
+  async addBook(file, path) {
+    // 生成书籍ID
+    const id = await this.generateBookId(file);
+    const title = file.name.replace('.epub', '');
+
+    console.log(`添加书籍: ID=${id}, 标题=${title}, 路径=${path}`);
+
+    // 保存书籍信息
     this.data.books[id] = {
       title: title,
       path: path,
       progress: 0,
       lastRead: Date.now()
     };
+
     this.debouncedSave();
+    return id;
+  },
+
+  // 获取当前书籍ID
+  getCurrentBookId() {
+    return this.data.currentBookId;
   },
 
   // 设置当前书籍
   setCurrentBook(id) {
-    this.data.currentBookId = id;
-    if (this.data.books[id]) {
-      this.data.books[id].lastRead = Date.now();
+    // 尝试查找书籍，首先按ID查找
+    let bookId = id;
+    let bookInfo = this.data.books[id];
+
+    // 如果没有找到，尝试按路径或文件名查找
+    if (!bookInfo) {
+      // 查找所有书籍，检查路径是否匹配
+      for (const [existingId, book] of Object.entries(this.data.books)) {
+        // 检查路径是否匹配
+        if (book.path === id || book.path === `/${id}`) {
+          bookId = existingId;
+          bookInfo = book;
+          console.log(`通过路径找到书籍: ${id} -> ${bookId}`);
+          break;
+        }
+
+        // 检查文件名是否匹配
+        const fileName = book.path.split('/').pop();
+        if (fileName === id) {
+          bookId = existingId;
+          bookInfo = book;
+          console.log(`通过文件名找到书籍: ${id} -> ${bookId}`);
+          break;
+        }
+      }
     }
+
+    // 设置当前书籍ID
+    this.data.currentBookId = bookId;
+
+    // 如果找到了书籍，更新最后阅读时间
+    if (bookInfo) {
+      this.data.books[bookId].lastRead = Date.now();
+    } else {
+      console.log(`警告：设置当前书籍为 ${bookId}，但该书籍不存在于数据中`);
+    }
+
     this.debouncedSave();
+
+    console.log(`设置当前书籍: ${bookId}`);
   },
 
   // 获取当前书籍
@@ -344,22 +439,49 @@ const dataStore = {
     };
   },
 
+  // 获取当前书籍ID
+  getCurrentBookId() {
+    return this.data.currentBookId;
+  },
+
   // 更新书籍进度
   updateProgress(id, progress, saveImmediately = false) {
-    if (!this.data.books[id]) {
-      console.log(`书籍不存在: ${id}`);
-      // 创建书籍记录
-      this.data.books[id] = {
-        title: id.replace('.epub', ''),
-        path: `/${id}`,
-        progress: 0,
-        lastRead: Date.now()
-      };
+    // 尝试查找书籍，首先按ID查找
+    let bookId = id;
+    let bookInfo = this.data.books[id];
+
+    // 如果没有找到，尝试按路径或文件名查找
+    if (!bookInfo) {
+      // 查找所有书籍，检查路径是否匹配
+      for (const [existingId, book] of Object.entries(this.data.books)) {
+        // 检查路径是否匹配
+        if (book.path === id || book.path === `/${id}`) {
+          bookId = existingId;
+          bookInfo = book;
+          console.log(`通过路径找到书籍: ${id} -> ${bookId}`);
+          break;
+        }
+
+        // 检查文件名是否匹配
+        const fileName = book.path.split('/').pop();
+        if (fileName === id) {
+          bookId = existingId;
+          bookInfo = book;
+          console.log(`通过文件名找到书籍: ${id} -> ${bookId}`);
+          break;
+        }
+      }
     }
 
-    console.log(`更新书籍进度: ${id}, 位置: ${progress}, 立即保存: ${saveImmediately}`);
-    this.data.books[id].progress = progress;
-    this.data.books[id].lastRead = Date.now();
+    // 如果仍然没有找到，记录错误并返回
+    if (!bookInfo) {
+      console.log(`书籍不存在: ${id}`);
+      return;
+    }
+
+    console.log(`更新书籍进度: ${bookId}, 位置: ${progress}, 立即保存: ${saveImmediately}`);
+    this.data.books[bookId].progress = progress;
+    this.data.books[bookId].lastRead = Date.now();
 
     // 如果需要立即保存（如关闭书籍时），则立即保存
     if (saveImmediately) {
@@ -378,7 +500,38 @@ const dataStore = {
 
   // 记录阅读活动
   recordReading(id, minutes) {
-    if (!this.data.books[id]) return;
+    // 尝试查找书籍，首先按ID查找
+    let bookId = id;
+    let bookInfo = this.data.books[id];
+
+    // 如果没有找到，尝试按路径或文件名查找
+    if (!bookInfo) {
+      // 查找所有书籍，检查路径是否匹配
+      for (const [existingId, book] of Object.entries(this.data.books)) {
+        // 检查路径是否匹配
+        if (book.path === id || book.path === `/${id}`) {
+          bookId = existingId;
+          bookInfo = book;
+          console.log(`通过路径找到书籍: ${id} -> ${bookId}`);
+          break;
+        }
+
+        // 检查文件名是否匹配
+        const fileName = book.path.split('/').pop();
+        if (fileName === id) {
+          bookId = existingId;
+          bookInfo = book;
+          console.log(`通过文件名找到书籍: ${id} -> ${bookId}`);
+          break;
+        }
+      }
+    }
+
+    // 如果仍然没有找到，记录错误并返回
+    if (!bookInfo) {
+      console.log(`书籍不存在: ${id}`);
+      return;
+    }
 
     // 获取今天的日期
     const today = new Date().toISOString().split('T')[0];
@@ -389,12 +542,12 @@ const dataStore = {
     }
 
     // 确保该书的数据存在
-    if (!this.data.readingStats.minutes[today].books[id]) {
-      this.data.readingStats.minutes[today].books[id] = 0;
+    if (!this.data.readingStats.minutes[today].books[bookId]) {
+      this.data.readingStats.minutes[today].books[bookId] = 0;
     }
 
     // 更新阅读时间
-    this.data.readingStats.minutes[today].books[id] += minutes;
+    this.data.readingStats.minutes[today].books[bookId] += minutes;
     this.data.readingStats.minutes[today].total += minutes;
 
     // 保存数据
@@ -428,12 +581,51 @@ const dataStore = {
     return this.data.notes[id] || "";
   },
 
-  // 从 Dropbox 加载书籍文件
-  async loadBookFile(path) {
+  // 加载并显示书籍（高级方法，整合了多个操作）
+  async loadAndDisplayBook(file, path = null) {
     try {
+      // 1. 添加书籍并获取ID
+      const bookId = await this.addBook(file, path || `/${file.name}`);
+
+      // 2. 设置当前书籍
+      this.setCurrentBook(bookId);
+
+      // 3. 加载笔记
+      const notesTextarea = document.getElementById('notes');
+      if (notesTextarea) {
+        notesTextarea.value = this.getNote(bookId);
+      }
+
+      // 4. 调用原始的处理函数
+      window.handleFileInternal(file);
+
+      console.log(`书籍加载并显示完成: ID=${bookId}, 标题=${file.name.replace('.epub', '')}`);
+
+      return bookId;
+    } catch (error) {
+      console.error('加载并显示书籍失败:', error);
+      throw error;
+    }
+  },
+
+  // 从 Dropbox 加载书籍文件
+  async loadBookFile(id) {
+    try {
+      // 获取书籍信息
+      const bookInfo = this.data.books[id];
+      if (!bookInfo) {
+        console.error(`未找到书籍信息: ${id}`);
+        return null;
+      }
+
+      // 使用保存的路径，从路径中提取文件名
+      const path = bookInfo.path;
+      const fileName = path.split('/').pop();
+
       // 确保路径是正确的格式
       const safePath = path.startsWith('/') ? path : `/${path}`;
-      const fileName = safePath.split('/').pop();
+
+      console.log(`加载书籍: ID=${id}, 文件名=${fileName}, 路径=${safePath}`);
 
       // 首先尝试从 IndexedDB 缓存中加载
       const cachedBook = await this.loadBookFromCache(fileName);
@@ -621,15 +813,27 @@ const dataStore = {
   // 从EPUB文件提取封面
   async extractCoverFromEpub(file) {
     try {
+      // 确定缓存键
+      let cacheKey;
+      if (typeof file === 'string') {
+        // 如果是字符串，直接使用
+        cacheKey = file;
+      } else if (file && typeof file.name === 'string') {
+        // 如果是File对象，使用文件名
+        cacheKey = file.name;
+      } else {
+        console.error('无法确定封面缓存键:', file);
+        return null;
+      }
+
       // 检查是否已经有缓存的封面
-      const bookId = file.name;
-      const cachedCover = await this.getCoverFromCache(bookId);
+      const cachedCover = await this.getCoverFromCache(cacheKey);
       if (cachedCover) {
         return cachedCover;
       }
 
       // 没有缓存，需要提取封面
-      console.log('没有缓存的封面，开始提取:', bookId);
+      console.log('没有缓存的封面，开始提取:', cacheKey);
 
       // 创建临时的Book对象
       const book = ePub();
@@ -660,7 +864,7 @@ const dataStore = {
       }
 
       // 缓存封面URL
-      await this.saveCoverToCache(bookId, coverUrl);
+      await this.saveCoverToCache(cacheKey, coverUrl);
       return coverUrl;
     } catch (error) {
       console.error('提取封面过程中出错:', error);

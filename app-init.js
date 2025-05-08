@@ -26,13 +26,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.log('app-init.js: 加载上次阅读的书籍:', currentBook.title);
 
         // 从 Dropbox 加载书籍文件
-        const file = await dataStore.loadBookFile(currentBook.path);
+        const file = await dataStore.loadBookFile(currentBook.id);
         if (file) {
           // 标记书籍已加载
           window.bookLoaded = true;
 
           // 加载书籍
           loadBook(file, currentBook.progress);
+        } else {
+          console.error('无法加载书籍文件:', currentBook.id);
         }
       }
     }
@@ -46,16 +48,15 @@ document.addEventListener('DOMContentLoaded', async function() {
 });
 
 // 加载书籍函数
-function loadBook(file, progress = 0) {
-  if (typeof window.handleFile === 'function') {
-    window.handleFile(file);
+async function loadBook(file, progress = 0) {
+  // 使用 dataStore.loadAndDisplayBook 加载并显示书籍
+  await dataStore.loadAndDisplayBook(file);
 
-    // 设置进度（如果有）
-    if (progress > 0 && typeof window.updatePages === 'function') {
-      setTimeout(() => {
-        window.updatePages(progress);
-      }, 1000);
-    }
+  // 设置进度（如果有）
+  if (progress > 0 && typeof window.updatePages === 'function') {
+    setTimeout(() => {
+      window.updatePages(progress);
+    }, 1000);
   }
 }
 
@@ -66,8 +67,9 @@ function setupNotesArea() {
 
   // 当笔记内容变化时保存
   notesTextarea.addEventListener('input', function() {
-    if (window.currentBook) {
-      dataStore.saveNote(window.currentBook, notesTextarea.value);
+    const currentBookId = dataStore.getCurrentBookId();
+    if (currentBookId) {
+      dataStore.saveNote(currentBookId, notesTextarea.value);
     }
   });
 }
@@ -83,8 +85,9 @@ function setupFinishDialog() {
   // 点击"是"按钮
   yesButton.addEventListener('click', () => {
     // 标记当前书籍为已读完
-    if (window.currentBook) {
-      dataStore.markAsFinished(window.currentBook);
+    const currentBookId = dataStore.getCurrentBookId();
+    if (currentBookId) {
+      dataStore.markAsFinished(currentBookId);
     }
 
     // 隐藏对话框
@@ -98,26 +101,8 @@ function setupFinishDialog() {
   });
 }
 
-// 修改现有的 handleFile 函数
-window.handleFileOriginal = window.handleFile;
-window.handleFile = function(file) {
-  // 调用原始处理函数
-  window.handleFileOriginal(file);
-
-  // 保存书籍信息
-  const bookId = file.name;
-  const bookTitle = file.name.replace('.epub', '');
-
-  // 创建或更新书籍数据
-  dataStore.addBook(bookId, bookTitle, `/${bookId}`);
-  dataStore.setCurrentBook(bookId);
-
-  // 加载笔记
-  const notesTextarea = document.getElementById('notes');
-  if (notesTextarea) {
-    notesTextarea.value = dataStore.getNote(bookId);
-  }
-};
+// 注意：window.handleFile 已被移除，请使用 dataStore.loadAndDisplayBook
+// 这个注释保留在这里，以便开发者了解这个变更
 
 // 检查是否到达书籍末尾
 function checkBookEnd(currentLocation, totalLocations) {
@@ -134,7 +119,13 @@ function checkBookEnd(currentLocation, totalLocations) {
 // 添加阅读记录函数 - 每次翻页记录1分钟
 function recordReading() {
   if (window.currentBook) {
-    dataStore.recordReading(window.currentBook, 1);
+    // 使用当前书籍ID记录阅读时间
+    const currentBookId = dataStore.getCurrentBook()?.id;
+    if (currentBookId) {
+      dataStore.recordReading(currentBookId, 1);
+    } else {
+      console.warn('无法记录阅读时间：未找到当前书籍ID');
+    }
   }
 }
 
@@ -146,7 +137,13 @@ window.updatePages = function(location) {
 
   // 保存进度
   if (window.currentBook) {
-    dataStore.updateProgress(window.currentBook, location);
+    // 使用当前书籍ID更新进度
+    const currentBookId = dataStore.getCurrentBook()?.id;
+    if (currentBookId) {
+      dataStore.updateProgress(currentBookId, location);
+    } else {
+      console.warn('无法更新阅读进度：未找到当前书籍ID');
+    }
   }
 };
 

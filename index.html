@@ -1907,11 +1907,11 @@
           return null;
         }
 
-        // 使用 dataStore 中的方法
-        const bookId = path.split('/').pop();
+        // 获取文件名
+        const fileName = path.split('/').pop();
 
         // 首先尝试从缓存获取封面
-        const cachedCover = await dataStore.getCoverFromCache(bookId);
+        const cachedCover = await dataStore.getCoverFromCache(fileName);
         if (cachedCover) {
           return cachedCover;
         }
@@ -1922,12 +1922,32 @@
         // 确保路径是正确的格式
         const safePath = path.startsWith('/') ? path : `/${path}`;
 
-        // 加载书籍文件
-        const file = await dataStore.loadBookFile(safePath);
-        if (!file) {
-          console.error('无法加载书籍文件以提取封面');
+        // 下载文件
+        const response = await fetch('https://content.dropboxapi.com/2/files/download', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/octet-stream',
+            'Dropbox-API-Arg': JSON.stringify({
+              path: safePath
+            }).replace(/[\u007f-\uffff]/g, function(c) {
+              return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+            })
+          }
+        });
+
+        if (!response.ok) {
+          console.error('从 Dropbox 下载书籍失败:', response.status);
           return null;
         }
+
+        // 获取文件内容并创建 File 对象
+        const arrayBuffer = await response.arrayBuffer();
+        const file = new File(
+          [new Blob([arrayBuffer], {type: 'application/epub+zip'})],
+          fileName,
+          {type: 'application/epub+zip'}
+        );
 
         // 提取封面
         return await dataStore.extractCoverFromEpub(file);
@@ -1989,7 +2009,9 @@
       });
 
       // 异步加载封面 - 直接从缓存获取，避免重复加载书籍
-      dataStore.getCoverFromCache(book.name).then(coverUrl => {
+      // 使用文件名作为缓存键
+      const fileName = book.name;
+      dataStore.getCoverFromCache(fileName).then(coverUrl => {
         // 移除加载指示器
         if (loadingIndicator.parentNode) {
           loadingIndicator.parentNode.removeChild(loadingIndicator);
@@ -2029,7 +2051,7 @@
 
     // 注意：书籍缓存功能已移至 models.js 中的 dataStore 对象
 
-    // 从 Dropbox 加载书籍 - 使用 dataStore 中的方法
+    // 从 Dropbox 加载书籍 - 直接下载文件并处理
     async function loadBookFromDropbox(path) {
       try {
         const accessToken = localStorage.getItem('dropboxAccessToken');
@@ -2042,16 +2064,43 @@
 
         // 确保路径是正确的格式
         const safePath = path.startsWith('/') ? path : `/${path}`;
+        const fileName = path.split('/').pop();
 
-        // 使用 dataStore 中的方法加载书籍
-        const file = await dataStore.loadBookFile(safePath);
+        // 下载文件
+        const response = await fetch('https://content.dropboxapi.com/2/files/download', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/octet-stream',
+            'Dropbox-API-Arg': JSON.stringify({
+              path: safePath
+            }).replace(/[\u007f-\uffff]/g, function(c) {
+              return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+            })
+          }
+        });
 
-        if (!file) {
-          throw new Error('无法加载书籍文件');
+        if (!response.ok) {
+          console.error('从 Dropbox 下载书籍失败:', response.status);
+          throw new Error('无法下载书籍文件');
         }
 
-        // 处理文件
-        window.handleFile(file);
+        // 获取文件内容并创建 File 对象
+        const arrayBuffer = await response.arrayBuffer();
+        const file = new File(
+          [new Blob([arrayBuffer], {type: 'application/epub+zip'})],
+          fileName,
+          {type: 'application/epub+zip'}
+        );
+
+        // 保存到缓存
+        await dataStore.saveBookToCache(fileName, arrayBuffer);
+
+        // 使用 dataStore 的高级方法加载并显示书籍
+        await dataStore.loadAndDisplayBook(file, safePath);
+
+        // 关闭抽屉
+        closeDrawer();
       } catch (error) {
         console.error('从 Dropbox 加载书籍失败:', error);
         alert('无法加载书籍，请重试。');
@@ -2227,9 +2276,9 @@
               uploadToDropbox(file);
             } else {
               // 否则直接处理文件
-              // 使用 dataStore 提取封面，然后处理文件
+              // 使用 dataStore 提取封面，然后加载并显示书籍
               dataStore.extractCoverFromEpub(file).then(() => {
-                window.handleFile(file);
+                dataStore.loadAndDisplayBook(file);
               });
             }
             // 关闭抽屉
@@ -2290,8 +2339,8 @@
         // 预加载封面
         await dataStore.extractCoverFromEpub(file);
 
-        // 处理文件
-        window.handleFile(file);
+        // 加载并显示书籍
+        await dataStore.loadAndDisplayBook(file, `/${file.name}`);
 
         // 刷新书籍列表
         loadDropboxBooks();
@@ -2299,17 +2348,13 @@
         console.error('上传文件到 Dropbox 失败:', error);
         alert('上传文件到 Dropbox 失败，请重试。');
 
-        // 如果上传失败，仍然处理文件
-        window.handleFile(file);
+        // 如果上传失败，仍然加载并显示书籍
+        await dataStore.loadAndDisplayBook(file);
       }
     }
 
-    // 在全局作用域中定义handleFile函数，确保它在页面加载前就可用
-    window.handleFile = function(file) {
-      console.log('全局handleFile函数被调用，文件:', file ? file.name : 'undefined');
-      // 无论文档状态如何，都将文件保存到全局变量中等待处理
-      window._pendingFile = file;
-    };
+    // 注意：window.handleFile 已被移除，请使用 dataStore.loadAndDisplayBook
+    // 这个注释保留在这里，以便开发者了解这个变更
 
     document.addEventListener('DOMContentLoaded', async function() {
       // 设置顶部抽屉
@@ -2364,13 +2409,14 @@
           updateProgressInfo();
 
           // 保存阅读进度到本地，但不保存到Dropbox（避免初始加载时频繁保存）
-          if (currentBook) {
+          const currentBookId = dataStore.getCurrentBookId();
+          if (currentBookId) {
             // 只保存到本地存储，不触发保存到Dropbox
-            localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
+            localStorage.setItem(`${currentBookId}-progress`, currentLocation.toString());
 
             // 更新dataStore中的进度，但不立即保存
-            if (dataStore && dataStore.data && dataStore.data.books && dataStore.data.books[currentBook]) {
-              dataStore.data.books[currentBook].progress = currentLocation;
+            if (dataStore && dataStore.data && dataStore.data.books && dataStore.data.books[currentBookId]) {
+              dataStore.data.books[currentBookId].progress = currentLocation;
             }
           }
         }).catch(error => {
@@ -2445,15 +2491,7 @@
       // 将updatePages函数添加到window对象，使其在所有作用域中可用
       window.updatePages = updatePages;
 
-      // 加载保存的笔记
-      try {
-        const savedNotes = localStorage.getItem('epub-reader-notes');
-        if (savedNotes) {
-          currentNotes = JSON.parse(savedNotes);
-        }
-      } catch (error) {
-        console.error('Error loading saved notes:', error);
-      }
+      // 注意：笔记现在完全由 dataStore 管理，不再使用 localStorage
 
       // 处理拖放事件 - 使用统一的处理函数
       // 处理拖放区域样式
@@ -2505,8 +2543,8 @@
             // 使用setTimeout延迟执行，给浏览器时间处理UI更新
             setTimeout(function() {
               try {
-                // 处理新文件
-                window.handleFile(file);
+                // 加载并显示书籍
+                dataStore.loadAndDisplayBook(file);
               } catch (error) {
                 console.error('处理文件时出错:', error);
               }
@@ -2533,9 +2571,10 @@
 
       // 保存笔记函数 - 提取为独立函数避免代码重复
       function saveNotes() {
-        if (currentBook) {
-          currentNotes[currentBook] = notesTextarea.value;
-          localStorage.setItem('epub-reader-notes', JSON.stringify(currentNotes));
+        const currentBookId = dataStore.getCurrentBookId();
+        if (currentBookId) {
+          // 使用 dataStore.saveNote 保存笔记
+          dataStore.saveNote(currentBookId, notesTextarea.value);
         }
       }
 
@@ -2654,18 +2693,15 @@
       function unloadCurrentBook() {
         try {
           // 保存当前笔记
-          if (currentBook && notesTextarea) {
-            dataStore.saveNote(currentBook, notesTextarea.value);
+          const currentBookId = dataStore.getCurrentBookId();
+          if (currentBookId && notesTextarea) {
+            dataStore.saveNote(currentBookId, notesTextarea.value);
           }
 
           // 保存当前阅读进度
-          if (currentBook && currentLocation >= 0) {
+          if (currentBookId && currentLocation >= 0) {
             // 使用新的数据存储服务更新进度，立即保存
-            dataStore.updateProgress(currentBook, currentLocation, true);
-
-            // 设置当前书籍
-            dataStore.setCurrentBook(currentBook);
-            console.log(`设置当前书籍: ${currentBook}`);
+            dataStore.updateProgress(currentBookId, currentLocation, true);
           }
 
           // 清空容器 - 这是最重要的部分
@@ -2702,8 +2738,8 @@
         }
       }
 
-      // 这个函数将在DOMContentLoaded事件处理程序中使用
-      function handleFileInternal(file) {
+      // 定义为全局函数，以便 dataStore.loadAndDisplayBook 可以调用
+      window.handleFileInternal = function(file) {
         // 检查库是否已加载
         if (!window.librariesReady) {
           alert('Libraries are still loading. Please wait a moment and try again.');
@@ -2719,14 +2755,9 @@
         // 如果当前已有书籍加载，先卸载它
         unloadCurrentBook();
 
-        // 设置当前书籍
-        currentBook = file.name;
-
-        // 使用新的数据存储服务设置当前书籍
-        if (dataStore) {
-          dataStore.setCurrentBook(currentBook);
-          console.log(`设置当前书籍: ${currentBook}`);
-        }
+        // 获取当前书籍ID
+        const currentBookId = dataStore.getCurrentBookId();
+        console.log(`使用当前书籍: ${currentBookId}`);
 
         // 隐藏拖放区域
         dropArea.classList.add('hidden');
@@ -2794,8 +2825,11 @@
 
                 // 生成位置信息
                 book.ready.then(() => {
+                  // 获取当前书籍ID
+                  const currentBookId = dataStore.getCurrentBookId();
+
                   // 检查是否有保存的位置信息
-                  const storedLocations = localStorage.getItem(`${currentBook}-locations`);
+                  const storedLocations = localStorage.getItem(`${currentBookId}-locations`);
 
                   if (storedLocations) {
                     // 如果有保存的位置信息，直接加载
@@ -2804,23 +2838,20 @@
                     // 否则生成新的位置信息
                     return book.locations.generate(1024).then(locations => {
                       // 保存位置信息到本地存储
-                      localStorage.setItem(`${currentBook}-locations`, JSON.stringify(locations));
+                      localStorage.setItem(`${currentBookId}-locations`, JSON.stringify(locations));
                       return locations;
                     });
                   }
                 }).then((locations) => {
                   totalLocations = book.locations.total;
 
-                  // 检查是否有保存的阅读进度
-                  const storedProgress = localStorage.getItem(`${currentBook}-progress`);
-                  let startLocation = 0;
+                  // 获取当前书籍ID
+                  const currentBookId = dataStore.getCurrentBookId();
 
-                  if (storedProgress) {
-                    try {
-                      startLocation = parseInt(storedProgress, 10);
-                    } catch (e) {
-                      // 解析失败，使用默认值0
-                    }
+                  // 从 dataStore 获取保存的阅读进度
+                  let startLocation = 0;
+                  if (currentBookId && dataStore.data.books[currentBookId]) {
+                    startLocation = dataStore.data.books[currentBookId].progress || 0;
                   }
 
                   // 初始化显示
@@ -2874,14 +2905,13 @@
                         // 更新进度显示
                         window.updateProgressInfo();
 
-                        // 保存阅读进度到本地存储（这个操作很快，可以立即执行）
-                        if (currentBook) {
-                          localStorage.setItem(`${currentBook}-progress`, currentLocation.toString());
-
+                        // 保存阅读进度
+                        const currentBookId = dataStore.getCurrentBookId();
+                        if (currentBookId) {
                           // 注意：保存进度的逻辑已移至 updateReadingPosition 函数
                           // 这里不再重复保存，避免重复操作
                         } else {
-                          console.warn('无法保存进度：currentBook未定义');
+                          console.warn('无法保存进度：当前书籍ID未定义');
                         }
                       }
                     } catch (e) {
@@ -2934,8 +2964,8 @@
                             // 使用setTimeout延迟执行，给浏览器时间处理UI更新
                             setTimeout(function() {
                               try {
-                                // 处理新文件
-                                window.handleFile(file);
+                                // 加载并显示书籍
+                                dataStore.loadAndDisplayBook(file);
                               } catch (error) {
                                 console.error('处理文件时出错:', error);
                               }
@@ -3009,8 +3039,9 @@
           }
 
           // 加载笔记
-          if (notesTextarea) {
-            notesTextarea.value = dataStore.getNote(currentBook);
+          const currentBookId = dataStore.getCurrentBookId();
+          if (notesTextarea && currentBookId) {
+            notesTextarea.value = dataStore.getNote(currentBookId);
           }
 
           // 设置键盘导航
@@ -3064,9 +3095,10 @@
             window.updateProgressInfo();
 
             // 保存阅读进度，使用防抖保存
-            if (currentBook && dataStore) {
+            const currentBookId = dataStore.getCurrentBookId();
+            if (currentBookId && dataStore) {
               // 使用新的数据存储服务更新进度，不立即保存
-              dataStore.updateProgress(currentBook, currentLocation, false);
+              dataStore.updateProgress(currentBookId, currentLocation, false);
             }
           }
         } catch (e) {
@@ -3084,8 +3116,9 @@
           setTimeout(updateReadingPosition, 100);
 
           // 记录阅读活动
-          if (currentBook && dataStore) {
-            dataStore.recordReading(currentBook, 1);
+          const currentBookId = dataStore.getCurrentBookId();
+          if (currentBookId && dataStore) {
+            dataStore.recordReading(currentBookId, 1);
             console.log('记录阅读活动 - 向前翻页');
           }
         }).catch(function() {
@@ -3103,8 +3136,9 @@
           setTimeout(updateReadingPosition, 100);
 
           // 记录阅读活动
-          if (currentBook && dataStore) {
-            dataStore.recordReading(currentBook, 1);
+          const currentBookId = dataStore.getCurrentBookId();
+          if (currentBookId && dataStore) {
+            dataStore.recordReading(currentBookId, 1);
             console.log('记录阅读活动 - 向后翻页');
 
             // 检查是否到达书籍末尾
@@ -3158,30 +3192,24 @@
       // 使用节流函数包装handleResize，限制执行频率
       const throttledResize = throttle(handleResize, 50); // 50ms的节流间隔
 
-      // 将handleFile函数添加到window对象，使其在全局可用
-      window.handleFile = handleFileInternal;
+      // 注意：window.handleFile 已被移除，请使用 dataStore.loadAndDisplayBook
 
-      // 检查是否有待处理的文件
-      if (window._pendingFile) {
-        console.log('处理待处理的文件:', window._pendingFile.name);
-        handleFileInternal(window._pendingFile);
-        window._pendingFile = null;
-      }
+      // 注意：window._pendingFile 处理逻辑已被移除
+      // 现在使用 dataStore.loadAndDisplayBook 直接处理文件
 
       // 添加页面关闭前保存数据的事件监听器
       window.addEventListener('beforeunload', function() {
         console.log('页面即将关闭，保存数据...');
 
         // 保存当前笔记
-        if (currentBook && notesTextarea) {
-          dataStore.saveNote(currentBook, notesTextarea.value);
+        const currentBookId = dataStore.getCurrentBookId();
+        if (currentBookId && notesTextarea) {
+          dataStore.saveNote(currentBookId, notesTextarea.value);
         }
 
         // 保存当前阅读进度和当前书籍，立即保存
-        if (currentBook && currentLocation >= 0) {
-          dataStore.updateProgress(currentBook, currentLocation, true);
-          dataStore.setCurrentBook(currentBook);
-          console.log(`页面关闭前设置当前书籍: ${currentBook}`);
+        if (currentBookId && currentLocation >= 0) {
+          dataStore.updateProgress(currentBookId, currentLocation, true);
         }
       });
     });
