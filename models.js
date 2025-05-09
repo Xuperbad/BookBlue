@@ -12,6 +12,42 @@ function validateDate(date, context = '') {
   return date;
 }
 
+// 获取IndexedDB数据库的通用函数
+async function getDatabase(dbName = 'BookBlueCache', version = 2, storeNames = ['books', 'covers']) {
+  return new Promise((resolve, reject) => {
+    // 检查是否支持 IndexedDB
+    if (!window.indexedDB) {
+      console.log('浏览器不支持 IndexedDB');
+      reject(new Error('浏览器不支持 IndexedDB'));
+      return;
+    }
+
+    const request = indexedDB.open(dbName, version);
+
+    request.onupgradeneeded = function(event) {
+      const db = event.target.result;
+
+      // 创建所有需要的对象存储
+      storeNames.forEach(storeName => {
+        if (!db.objectStoreNames.contains(storeName)) {
+          console.log(`创建 ${storeName} 对象存储`);
+          db.createObjectStore(storeName);
+        }
+      });
+    };
+
+    request.onerror = function(event) {
+      console.error('打开 IndexedDB 失败:', event.target.error);
+      reject(event.target.error);
+    };
+
+    request.onsuccess = function(event) {
+      const db = event.target.result;
+      resolve(db);
+    };
+  });
+}
+
 // 全局数据存储对象
 const dataStore = {
   // 数据结构
@@ -691,61 +727,37 @@ const dataStore = {
   // 从缓存加载书籍
   async loadBookFromCache(fileName) {
     try {
-      // 检查是否支持 IndexedDB
-      if (!window.indexedDB) {
-        console.log('浏览器不支持 IndexedDB，无法使用缓存');
-        return null;
-      }
+      // 获取数据库
+      const db = await getDatabase();
+
+      // 从数据库中获取书籍数据
+      const transaction = db.transaction(['books'], 'readonly');
+      const store = transaction.objectStore('books');
 
       return new Promise((resolve) => {
-        // 使用版本 2，与其他地方保持一致
-        const request = indexedDB.open('BookBlueCache', 2);
+        const getRequest = store.get(fileName);
 
-        request.onupgradeneeded = function(event) {
-          const db = event.target.result;
-          if (!db.objectStoreNames.contains('books')) {
-            console.log('创建 books 对象存储');
-            db.createObjectStore('books');
-          }
-          if (!db.objectStoreNames.contains('covers')) {
-            console.log('创建 covers 对象存储');
-            db.createObjectStore('covers');
-          }
-        };
-
-        request.onerror = function(event) {
-          console.error('打开 IndexedDB 失败:', event.target.error);
+        getRequest.onerror = function(event) {
+          console.error('从缓存获取书籍失败:', event.target.error);
           resolve(null);
         };
 
-        request.onsuccess = function(event) {
-          const db = event.target.result;
-          const transaction = db.transaction(['books'], 'readonly');
-          const store = transaction.objectStore('books');
-          const getRequest = store.get(fileName);
-
-          getRequest.onerror = function(event) {
-            console.error('从缓存获取书籍失败:', event.target.error);
+        getRequest.onsuccess = function(event) {
+          const bookData = event.target.result;
+          if (!bookData) {
+            console.log(`缓存中没有找到书籍: ${fileName}`);
             resolve(null);
-          };
+            return;
+          }
 
-          getRequest.onsuccess = function(event) {
-            const bookData = event.target.result;
-            if (!bookData) {
-              console.log(`缓存中没有找到书籍: ${fileName}`);
-              resolve(null);
-              return;
-            }
+          // 创建 File 对象
+          const file = new File(
+            [new Blob([bookData], {type: 'application/epub+zip'})],
+            fileName,
+            {type: 'application/epub+zip'}
+          );
 
-            // 创建 File 对象
-            const file = new File(
-              [new Blob([bookData], {type: 'application/epub+zip'})],
-              fileName,
-              {type: 'application/epub+zip'}
-            );
-
-            resolve(file);
-          };
+          resolve(file);
         };
       });
     } catch (error) {
@@ -757,48 +769,24 @@ const dataStore = {
   // 保存书籍到缓存
   async saveBookToCache(fileName, arrayBuffer) {
     try {
-      // 检查是否支持 IndexedDB
-      if (!window.indexedDB) {
-        console.log('浏览器不支持 IndexedDB，无法使用缓存');
-        return false;
-      }
+      // 获取数据库
+      const db = await getDatabase();
+
+      // 保存书籍数据到数据库
+      const transaction = db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
 
       return new Promise((resolve) => {
-        // 使用版本 2，与其他地方保持一致
-        const request = indexedDB.open('BookBlueCache', 2);
+        const putRequest = store.put(arrayBuffer, fileName);
 
-        request.onupgradeneeded = function(event) {
-          const db = event.target.result;
-          if (!db.objectStoreNames.contains('books')) {
-            console.log('创建 books 对象存储');
-            db.createObjectStore('books');
-          }
-          if (!db.objectStoreNames.contains('covers')) {
-            console.log('创建 covers 对象存储');
-            db.createObjectStore('covers');
-          }
-        };
-
-        request.onerror = function(event) {
-          console.error('打开 IndexedDB 失败:', event.target.error);
+        putRequest.onerror = function(event) {
+          console.error('保存书籍到缓存失败:', event.target.error);
           resolve(false);
         };
 
-        request.onsuccess = function(event) {
-          const db = event.target.result;
-          const transaction = db.transaction(['books'], 'readwrite');
-          const store = transaction.objectStore('books');
-          const putRequest = store.put(arrayBuffer, fileName);
-
-          putRequest.onerror = function(event) {
-            console.error('保存书籍到缓存失败:', event.target.error);
-            resolve(false);
-          };
-
-          putRequest.onsuccess = function() {
-            console.log(`书籍已保存到缓存: ${fileName}`);
-            resolve(true);
-          };
+        putRequest.onsuccess = function() {
+          console.log(`书籍已保存到缓存: ${fileName}`);
+          resolve(true);
         };
       });
     } catch (error) {
@@ -872,49 +860,26 @@ const dataStore = {
   // 从缓存获取封面
   async getCoverFromCache(bookId) {
     try {
-      // 检查是否支持 IndexedDB
-      if (!window.indexedDB) {
-        return null;
-      }
+      // 获取数据库
+      const db = await getDatabase();
+
+      // 从数据库中获取封面数据
+      const transaction = db.transaction(['covers'], 'readonly');
+      const store = transaction.objectStore('covers');
 
       return new Promise((resolve) => {
-        // 使用版本 2，与其他地方保持一致
-        const request = indexedDB.open('BookBlueCache', 2);
+        const getRequest = store.get(bookId);
 
-        request.onupgradeneeded = function(event) {
-          const db = event.target.result;
-          // 检查并创建所有需要的对象存储
-          if (!db.objectStoreNames.contains('books')) {
-            console.log('创建 books 对象存储');
-            db.createObjectStore('books');
-          }
-          if (!db.objectStoreNames.contains('covers')) {
-            console.log('创建 covers 对象存储');
-            db.createObjectStore('covers');
-          }
-        };
-
-        request.onerror = function() {
+        getRequest.onerror = function() {
           resolve(null);
         };
 
-        request.onsuccess = function(event) {
-          const db = event.target.result;
-          const transaction = db.transaction(['covers'], 'readonly');
-          const store = transaction.objectStore('covers');
-          const getRequest = store.get(bookId);
-
-          getRequest.onerror = function() {
-            resolve(null);
-          };
-
-          getRequest.onsuccess = function(event) {
-            const coverUrl = event.target.result;
-            if (coverUrl) {
-              console.log(`使用缓存的封面: ${bookId}`);
-            }
-            resolve(coverUrl);
-          };
+        getRequest.onsuccess = function(event) {
+          const coverUrl = event.target.result;
+          if (coverUrl) {
+            console.log(`使用缓存的封面: ${bookId}`);
+          }
+          resolve(coverUrl);
         };
       });
     } catch (error) {
@@ -925,44 +890,23 @@ const dataStore = {
   // 保存封面到缓存
   async saveCoverToCache(bookId, coverUrl) {
     try {
-      // 检查是否支持 IndexedDB
-      if (!window.indexedDB) {
-        return false;
-      }
+      // 获取数据库
+      const db = await getDatabase();
+
+      // 保存封面数据到数据库
+      const transaction = db.transaction(['covers'], 'readwrite');
+      const store = transaction.objectStore('covers');
 
       return new Promise((resolve) => {
-        const request = indexedDB.open('BookBlueCache', 2);
+        const putRequest = store.put(coverUrl, bookId);
 
-        request.onupgradeneeded = function(event) {
-          const db = event.target.result;
-          if (!db.objectStoreNames.contains('books')) {
-            console.log('创建 books 对象存储');
-            db.createObjectStore('books');
-          }
-          if (!db.objectStoreNames.contains('covers')) {
-            console.log('创建 covers 对象存储');
-            db.createObjectStore('covers');
-          }
-        };
-
-        request.onerror = function() {
+        putRequest.onerror = function() {
           resolve(false);
         };
 
-        request.onsuccess = function(event) {
-          const db = event.target.result;
-          const transaction = db.transaction(['covers'], 'readwrite');
-          const store = transaction.objectStore('covers');
-          const putRequest = store.put(coverUrl, bookId);
-
-          putRequest.onerror = function() {
-            resolve(false);
-          };
-
-          putRequest.onsuccess = function() {
-            console.log(`封面已保存到缓存: ${bookId}`);
-            resolve(true);
-          };
+        putRequest.onsuccess = function() {
+          console.log(`封面已保存到缓存: ${bookId}`);
+          resolve(true);
         };
       });
     } catch (error) {
