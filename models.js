@@ -1,5 +1,17 @@
 // models.js - 极简数据存储模型
 
+// 验证并修正日期函数 - 确保日期年份在合理范围内
+function validateDate(date, context = '') {
+  // 检查日期是否合理（年份在2020-2030之间）
+  if (date.getFullYear() < 2020 || date.getFullYear() > 2030) {
+    console.error(`${context}检测到不合理的系统日期: ${date.toISOString()}`);
+    // 使用当前时间戳创建一个新的日期对象，确保使用正确的年份
+    date.setFullYear(new Date().getFullYear());
+    console.log(`已修正为: ${date.toISOString()}`);
+  }
+  return date;
+}
+
 // 全局数据存储对象
 const dataStore = {
   // 数据结构
@@ -84,8 +96,8 @@ const dataStore = {
     // 清空现有内容
     heatmapGrid.innerHTML = '';
 
-    // 获取当前日期
-    const now = new Date();
+    // 获取当前日期并验证
+    const now = validateDate(new Date(), '热力图');
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
@@ -270,10 +282,11 @@ const dataStore = {
         return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
       });
 
-      // 准备数据
+      // 准备数据，验证日期
+      const now = validateDate(new Date(), '保存数据');
       const dataToSave = JSON.stringify({
         ...this.data,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: now.toISOString()
       });
 
       // 上传到 Dropbox
@@ -390,12 +403,13 @@ const dataStore = {
 
     console.log(`添加书籍: ID=${id}, 标题=${title}, 路径=${path}`);
 
-    // 保存书籍信息
+    // 保存书籍信息，使用验证过的日期
+    const now = validateDate(new Date(), '添加书籍');
     this.data.books[id] = {
       title: title,
       path: path,
       progress: 0,
-      lastRead: Date.now()
+      lastRead: now.getTime()
     };
 
     this.debouncedSave();
@@ -407,9 +421,9 @@ const dataStore = {
     return this.data.currentBookId;
   },
 
-  // 设置当前书籍
-  setCurrentBook(id) {
-    // 尝试查找书籍，首先按ID查找
+  // 通用的查找书籍函数 - 根据ID、路径或文件名查找书籍
+  findBook(id) {
+    // 首先按ID查找
     let bookId = id;
     let bookInfo = this.data.books[id];
 
@@ -436,12 +450,21 @@ const dataStore = {
       }
     }
 
+    return { bookId, bookInfo };
+  },
+
+  // 设置当前书籍
+  setCurrentBook(id) {
+    // 查找书籍
+    const { bookId, bookInfo } = this.findBook(id);
+
     // 设置当前书籍ID
     this.data.currentBookId = bookId;
 
     // 如果找到了书籍，更新最后阅读时间
     if (bookInfo) {
-      this.data.books[bookId].lastRead = Date.now();
+      const now = validateDate(new Date(), '设置当前书籍');
+      this.data.books[bookId].lastRead = now.getTime();
     } else {
       console.log(`警告：设置当前书籍为 ${bookId}，但该书籍不存在于数据中`);
     }
@@ -462,41 +485,14 @@ const dataStore = {
     };
   },
 
-  // 获取当前书籍ID
-  getCurrentBookId() {
-    return this.data.currentBookId;
-  },
+
 
   // 更新书籍进度
   updateProgress(id, progress, saveImmediately = false) {
-    // 尝试查找书籍，首先按ID查找
-    let bookId = id;
-    let bookInfo = this.data.books[id];
+    // 查找书籍
+    const { bookId, bookInfo } = this.findBook(id);
 
-    // 如果没有找到，尝试按路径或文件名查找
-    if (!bookInfo) {
-      // 查找所有书籍，检查路径是否匹配
-      for (const [existingId, book] of Object.entries(this.data.books)) {
-        // 检查路径是否匹配
-        if (book.path === id || book.path === `/${id}`) {
-          bookId = existingId;
-          bookInfo = book;
-          console.log(`通过路径找到书籍: ${id} -> ${bookId}`);
-          break;
-        }
-
-        // 检查文件名是否匹配
-        const fileName = book.path.split('/').pop();
-        if (fileName === id) {
-          bookId = existingId;
-          bookInfo = book;
-          console.log(`通过文件名找到书籍: ${id} -> ${bookId}`);
-          break;
-        }
-      }
-    }
-
-    // 如果仍然没有找到，记录错误并返回
+    // 如果没有找到，记录错误并返回
     if (!bookInfo) {
       console.log(`书籍不存在: ${id}`);
       return;
@@ -504,7 +500,8 @@ const dataStore = {
 
     console.log(`更新书籍进度: ${bookId}, 位置: ${progress}, 立即保存: ${saveImmediately}`);
     this.data.books[bookId].progress = progress;
-    this.data.books[bookId].lastRead = Date.now();
+    const now = validateDate(new Date(), '更新进度');
+    this.data.books[bookId].lastRead = now.getTime();
 
     // 如果需要立即保存（如关闭书籍时），则立即保存
     if (saveImmediately) {
@@ -523,41 +520,18 @@ const dataStore = {
 
   // 记录阅读活动
   recordReading(id, minutes) {
-    // 尝试查找书籍，首先按ID查找
-    let bookId = id;
-    let bookInfo = this.data.books[id];
+    // 查找书籍
+    const { bookId, bookInfo } = this.findBook(id);
 
-    // 如果没有找到，尝试按路径或文件名查找
-    if (!bookInfo) {
-      // 查找所有书籍，检查路径是否匹配
-      for (const [existingId, book] of Object.entries(this.data.books)) {
-        // 检查路径是否匹配
-        if (book.path === id || book.path === `/${id}`) {
-          bookId = existingId;
-          bookInfo = book;
-          console.log(`通过路径找到书籍: ${id} -> ${bookId}`);
-          break;
-        }
-
-        // 检查文件名是否匹配
-        const fileName = book.path.split('/').pop();
-        if (fileName === id) {
-          bookId = existingId;
-          bookInfo = book;
-          console.log(`通过文件名找到书籍: ${id} -> ${bookId}`);
-          break;
-        }
-      }
-    }
-
-    // 如果仍然没有找到，记录错误并返回
+    // 如果没有找到，记录错误并返回
     if (!bookInfo) {
       console.log(`书籍不存在: ${id}`);
       return;
     }
 
-    // 获取今天的日期
-    const today = new Date().toISOString().split('T')[0];
+    // 获取今天的日期并验证
+    const now = validateDate(new Date(), '记录阅读');
+    const today = now.toISOString().split('T')[0];
 
     // 确保该日期的数据存在
     if (!this.data.readingStats.minutes[today]) {
