@@ -1728,6 +1728,8 @@
 
         // 保存令牌
         localStorage.setItem('dropboxAccessToken', accessToken);
+        // 设置全局访问令牌，供 dropboxHelper 使用
+        window.dropboxAccessToken = accessToken;
         if (refreshToken) {
           localStorage.setItem('dropboxRefreshToken', refreshToken);
         }
@@ -2118,6 +2120,8 @@
           const now = new Date().getTime();
           if (now < parseInt(tokenExpiry)) {
             console.log('Dropbox 访问令牌有效');
+            // 设置全局访问令牌，供 dropboxHelper 使用
+            window.dropboxAccessToken = accessToken;
             updateDropboxAuthUI(true);
             return true;
           } else {
@@ -2127,12 +2131,16 @@
         } else {
           // 没有过期时间信息，假设令牌有效
           console.log('Dropbox 访问令牌存在（无过期信息）');
+          // 设置全局访问令牌，供 dropboxHelper 使用
+          window.dropboxAccessToken = accessToken;
           updateDropboxAuthUI(true);
           return true;
         }
       }
 
       console.log('未连接 Dropbox 或令牌已过期');
+      // 清除全局访问令牌
+      window.dropboxAccessToken = null;
       updateDropboxAuthUI(false);
       return false;
     }

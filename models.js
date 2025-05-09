@@ -48,6 +48,107 @@ async function getDatabase(dbName = 'BookBlueCache', version = 2, storeNames = [
   });
 }
 
+// Dropbox API 辅助函数
+const dropboxHelper = {
+  // 从Dropbox下载文件
+  async downloadFile(path, options = {}) {
+    try {
+      // 确保路径以斜杠开头
+      if (!path.startsWith('/')) {
+        path = '/' + path;
+      }
+
+      // 编码路径中的特殊字符
+      const encodedPath = encodeURIComponent(path).replace(/%2F/g, '/');
+
+      console.log(`从Dropbox下载文件: ${path}`);
+
+      // 构建请求参数
+      const params = {
+        path: encodedPath
+      };
+
+      // 发送请求
+      const response = await fetch('https://content.dropboxapi.com/2/files/download', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${window.dropboxAccessToken}`,
+          'Dropbox-API-Arg': JSON.stringify(params)
+        }
+      });
+
+      // 检查响应状态
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Dropbox下载失败: ${response.status} ${response.statusText}`, errorText);
+        return null;
+      }
+
+      // 根据选项返回不同格式的数据
+      if (options.returnArrayBuffer) {
+        return await response.arrayBuffer();
+      } else if (options.returnBlob) {
+        return await response.blob();
+      } else if (options.returnJson) {
+        return await response.json();
+      } else {
+        return await response.text();
+      }
+    } catch (error) {
+      console.error('从Dropbox下载文件时出错:', error);
+      return null;
+    }
+  },
+
+  // 上传文件到Dropbox
+  async uploadFile(path, content, options = {}) {
+    try {
+      // 确保路径以斜杠开头
+      if (!path.startsWith('/')) {
+        path = '/' + path;
+      }
+
+      // 编码路径中的特殊字符
+      const encodedPath = encodeURIComponent(path).replace(/%2F/g, '/');
+
+      console.log(`上传文件到Dropbox: ${path}`);
+
+      // 构建请求参数
+      const params = {
+        path: encodedPath,
+        mode: options.mode || 'overwrite',
+        autorename: options.autorename || false,
+        mute: options.mute || false
+      };
+
+      // 发送请求
+      const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${window.dropboxAccessToken}`,
+          'Dropbox-API-Arg': JSON.stringify(params),
+          'Content-Type': 'application/octet-stream'
+        },
+        body: content
+      });
+
+      // 检查响应状态
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Dropbox上传失败: ${response.status} ${response.statusText}`, errorText);
+        return false;
+      }
+
+      const result = await response.json();
+      console.log(`文件已上传到Dropbox: ${result.path_display}`);
+      return true;
+    } catch (error) {
+      console.error('上传文件到Dropbox时出错:', error);
+      return false;
+    }
+  }
+}
+
 // 全局数据存储对象
 const dataStore = {
   // 数据结构
@@ -256,44 +357,26 @@ const dataStore = {
   // 从 Dropbox 加载数据
   async loadFromDropbox() {
     try {
-      const accessToken = localStorage.getItem('dropboxAccessToken');
+      // 检查是否有访问令牌
+      if (!window.dropboxAccessToken) {
+        console.error('未找到 Dropbox 访问令牌，无法加载数据');
+        return;
+      }
 
-      // 处理特殊字符
-      const dropboxArg = JSON.stringify({
-        path: '/BookBlue_Data.json'
-      }).replace(/[\u007f-\uffff]/g, function(c) {
-        return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
-      });
+      // 使用 dropboxHelper 下载文件
+      const jsonData = await dropboxHelper.downloadFile('/BookBlue_Data.json', { returnJson: true });
 
-      // 加载数据文件
-      const response = await fetch('https://content.dropboxapi.com/2/files/download', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/octet-stream',
-          'Dropbox-API-Arg': dropboxArg
-        }
-      });
-
-      // 如果文件不存在，使用默认数据
-      if (response.status === 409) {
+      // 如果没有数据，使用默认数据
+      if (!jsonData) {
         console.log('Dropbox 中没有数据文件，使用默认数据');
         return;
       }
 
-      if (!response.ok) {
-        console.error('从 Dropbox 加载数据失败:', response.status);
-        return;
-      }
-
-      // 解析数据
-      const loadedData = await response.json();
-
       // 更新数据
-      if (loadedData.books) this.data.books = loadedData.books;
-      if (loadedData.notes) this.data.notes = loadedData.notes;
-      if (loadedData.readingStats) this.data.readingStats = loadedData.readingStats;
-      if (loadedData.currentBookId) this.data.currentBookId = loadedData.currentBookId;
+      if (jsonData.books) this.data.books = jsonData.books;
+      if (jsonData.notes) this.data.notes = jsonData.notes;
+      if (jsonData.readingStats) this.data.readingStats = jsonData.readingStats;
+      if (jsonData.currentBookId) this.data.currentBookId = jsonData.currentBookId;
 
       console.log('从 Dropbox 加载数据成功');
 
@@ -307,16 +390,11 @@ const dataStore = {
   // 保存数据到 Dropbox
   async saveToDropbox() {
     try {
-      const accessToken = localStorage.getItem('dropboxAccessToken');
-      if (!accessToken) return false;
-
-      // 处理特殊字符
-      const dropboxArg = JSON.stringify({
-        path: '/BookBlue_Data.json',
-        mode: 'overwrite'
-      }).replace(/[\u007f-\uffff]/g, function(c) {
-        return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
-      });
+      // 检查是否有访问令牌
+      if (!window.dropboxAccessToken) {
+        console.error('未找到 Dropbox 访问令牌，无法保存数据');
+        return false;
+      }
 
       // 准备数据，验证日期
       const now = validateDate(new Date(), '保存数据');
@@ -325,24 +403,11 @@ const dataStore = {
         lastUpdated: now.toISOString()
       });
 
-      // 上传到 Dropbox
-      const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/octet-stream',
-          'Dropbox-API-Arg': dropboxArg
-        },
-        body: dataToSave
-      });
-
-      if (!response.ok) {
-        console.error('保存数据到 Dropbox 失败:', response.status);
-        return false;
-      }
+      // 使用 dropboxHelper 上传文件
+      const success = await dropboxHelper.uploadFile('/BookBlue_Data.json', dataToSave);
 
       // 成功保存，但不打印消息，避免与防抖保存消息重复
-      return true;
+      return success;
     } catch (error) {
       console.error('保存数据到 Dropbox 失败:', error);
       return false;
@@ -655,10 +720,7 @@ const dataStore = {
       const path = bookInfo.path;
       const fileName = path.split('/').pop();
 
-      // 确保路径是正确的格式
-      const safePath = path.startsWith('/') ? path : `/${path}`;
-
-      console.log(`加载书籍: ID=${id}, 文件名=${fileName}, 路径=${safePath}`);
+      console.log(`加载书籍: ID=${id}, 文件名=${fileName}, 路径=${path}`);
 
       // 首先尝试从 IndexedDB 缓存中加载
       const cachedBook = await this.loadBookFromCache(fileName);
@@ -674,35 +736,22 @@ const dataStore = {
       }
 
       // 如果缓存中没有，从 Dropbox 加载
-      const accessToken = localStorage.getItem('dropboxAccessToken');
-      if (!accessToken) return null;
-
-      console.log(`从 Dropbox 加载书籍: ${safePath}`);
-
-      // 使用 encodeURIComponent 处理特殊字符
-      const dropboxArg = JSON.stringify({
-        path: safePath
-      }).replace(/[\u007f-\uffff]/g, function(c) {
-        return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
-      });
-
-      // 下载文件
-      const response = await fetch('https://content.dropboxapi.com/2/files/download', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/octet-stream',
-          'Dropbox-API-Arg': dropboxArg
-        }
-      });
-
-      if (!response.ok) {
-        console.error('从 Dropbox 下载书籍失败:', response.status);
+      if (!window.dropboxAccessToken) {
+        console.error('未找到 Dropbox 访问令牌');
         return null;
       }
 
-      // 获取文件内容并创建 File 对象
-      const arrayBuffer = await response.arrayBuffer();
+      console.log(`从 Dropbox 加载书籍: ${path}`);
+
+      // 使用 dropboxHelper 下载文件
+      const arrayBuffer = await dropboxHelper.downloadFile(path, { returnArrayBuffer: true });
+
+      if (!arrayBuffer) {
+        console.error(`从 Dropbox 下载书籍失败: ${path}`);
+        return null;
+      }
+
+      // 创建 File 对象
       const file = new File(
         [new Blob([arrayBuffer], {type: 'application/epub+zip'})],
         fileName,
