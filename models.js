@@ -58,22 +58,25 @@ const dropboxHelper = {
         path = '/' + path;
       }
 
-      // 编码路径中的特殊字符
-      const encodedPath = encodeURIComponent(path).replace(/%2F/g, '/');
+      console.log(`从Dropbox下载文件 (原始路径): ${path}`);
 
-      console.log(`从Dropbox下载文件: ${path}`);
+      // 使用更安全的方式处理路径
+      // 1. 先将路径转换为JSON字符串
+      // 2. 然后处理Unicode字符
+      const dropboxArg = JSON.stringify({
+        path: path
+      }).replace(/[\u007f-\uffff]/g, function(c) {
+        return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+      });
 
-      // 构建请求参数
-      const params = {
-        path: encodedPath
-      };
+      console.log(`Dropbox API 参数: ${dropboxArg}`);
 
       // 发送请求
       const response = await fetch('https://content.dropboxapi.com/2/files/download', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${window.dropboxAccessToken}`,
-          'Dropbox-API-Arg': JSON.stringify(params)
+          'Dropbox-API-Arg': dropboxArg
         }
       });
 
@@ -85,7 +88,10 @@ const dropboxHelper = {
       }
 
       // 根据选项返回不同格式的数据
-      if (options.returnArrayBuffer) {
+      if (options.returnResponse) {
+        // 返回完整的响应对象，让调用者决定如何处理
+        return response;
+      } else if (options.returnArrayBuffer) {
         return await response.arrayBuffer();
       } else if (options.returnBlob) {
         return await response.blob();
@@ -108,25 +114,31 @@ const dropboxHelper = {
         path = '/' + path;
       }
 
-      // 编码路径中的特殊字符
-      const encodedPath = encodeURIComponent(path).replace(/%2F/g, '/');
-
-      console.log(`上传文件到Dropbox: ${path}`);
+      console.log(`上传文件到Dropbox (原始路径): ${path}`);
 
       // 构建请求参数
       const params = {
-        path: encodedPath,
+        path: path,
         mode: options.mode || 'overwrite',
         autorename: options.autorename || false,
         mute: options.mute || false
       };
+
+      // 使用更安全的方式处理路径和参数
+      // 1. 先将参数转换为JSON字符串
+      // 2. 然后处理Unicode字符
+      const dropboxArg = JSON.stringify(params).replace(/[\u007f-\uffff]/g, function(c) {
+        return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+      });
+
+      console.log(`Dropbox API 参数: ${dropboxArg}`);
 
       // 发送请求
       const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${window.dropboxAccessToken}`,
-          'Dropbox-API-Arg': JSON.stringify(params),
+          'Dropbox-API-Arg': dropboxArg,
           'Content-Type': 'application/octet-stream'
         },
         body: content
@@ -744,10 +756,18 @@ const dataStore = {
       console.log(`从 Dropbox 加载书籍: ${path}`);
 
       // 使用 dropboxHelper 下载文件
-      const arrayBuffer = await dropboxHelper.downloadFile(path, { returnArrayBuffer: true });
+      const response = await dropboxHelper.downloadFile(path, { returnResponse: true });
+
+      if (!response) {
+        console.error(`从 Dropbox 下载书籍失败: ${path}`);
+        return null;
+      }
+
+      // 获取响应的 ArrayBuffer
+      const arrayBuffer = await response.arrayBuffer();
 
       if (!arrayBuffer) {
-        console.error(`从 Dropbox 下载书籍失败: ${path}`);
+        console.error(`无法从响应中获取 ArrayBuffer: ${path}`);
         return null;
       }
 
