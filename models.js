@@ -170,7 +170,9 @@ const dataStore = {
 
       const bookName = document.createElement('div');
       bookName.className = 'frequent-book-name';
-      bookName.textContent = bookId.replace('.epub', '');
+      // 使用书籍标题而不是ID
+      const bookInfo = this.data.books[bookId];
+      bookName.textContent = bookInfo ? bookInfo.title : bookId.replace('.epub', '');
 
       const bookTime = document.createElement('div');
       bookTime.className = 'frequent-book-time';
@@ -363,7 +365,28 @@ const dataStore = {
   async addBook(file, path) {
     // 生成书籍ID
     const id = await this.generateBookId(file);
-    const title = file.name.replace('.epub', '');
+
+    // 默认标题（如果元数据提取失败）
+    let title = file.name.replace('.epub', '');
+
+    try {
+      // 从EPUB元数据中提取标题
+      const book = ePub();
+      const arrayBuffer = await file.arrayBuffer();
+      await book.open(arrayBuffer);
+      const metadata = await book.loaded.metadata;
+
+      // 如果元数据中有标题，使用元数据中的标题
+      if (metadata && metadata.title) {
+        title = metadata.title;
+        console.log(`从元数据中提取标题: ${title}`);
+      } else {
+        console.log(`未找到元数据标题，使用文件名: ${title}`);
+      }
+    } catch (error) {
+      console.error('从元数据提取标题失败:', error);
+      // 如果提取失败，继续使用文件名作为标题
+    }
 
     console.log(`添加书籍: ID=${id}, 标题=${title}, 路径=${path}`);
 
