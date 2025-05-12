@@ -289,7 +289,13 @@ const dataStore = {
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
     // 创建前导空白格
-    for (let i = 0; i < (firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1); i++) {
+    // 在中国，周一是一周的第一天，所以需要调整计算方式
+    // 0(周日)应该放在最后，1(周一)应该是第一个，以此类推
+    let leadingEmptyDays = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+
+    console.log(`热力图: 当月第一天是星期${firstDayOfWeek}，需要${leadingEmptyDays}个前导空白格`);
+
+    for (let i = 0; i < leadingEmptyDays; i++) {
       const emptyDay = document.createElement('div');
       emptyDay.className = 'heatmap-day empty';
       heatmapGrid.appendChild(emptyDay);
@@ -300,9 +306,17 @@ const dataStore = {
       const dayElement = document.createElement('div');
       dayElement.className = 'heatmap-day';
 
-      // 格式化日期为YYYY-MM-DD
+      // 格式化日期为YYYY-MM-DD，使用本地时间而不是UTC时间
       const date = new Date(currentYear, currentMonth, day);
-      const dateString = date.toISOString().split('T')[0];
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(date.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${dayStr}`;
+
+      // 调试日志
+      if (day === 1 || day === daysInMonth) {
+        console.log(`热力图日期: 第${day}天 -> ${dateString}`);
+      }
 
       // 获取当天的阅读分钟数
       const dayData = this.data.readingStats.minutes[dateString];
@@ -675,7 +689,15 @@ const dataStore = {
 
     // 获取今天的日期并验证（确保日期年份在合理范围内）
     const now = validateDate(new Date(), '记录阅读');
-    const today = now.toISOString().split('T')[0]; // 格式化为YYYY-MM-DD
+
+    // 使用本地时间而不是UTC时间，避免日期偏差
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = `${year}-${month}-${day}`; // 格式化为YYYY-MM-DD
+
+    console.log(`记录阅读使用的日期: ${today} (本地时间)`);
+
 
     // 确保该日期的数据结构存在
     if (!this.data.readingStats.minutes[today]) {
