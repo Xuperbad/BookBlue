@@ -210,6 +210,8 @@ function recordReading() {
 // 修改现有的 updatePages 函数
 window.updatePagesOriginal = window.updatePages;
 window.updatePages = function(location) {
+  console.log(`app-init.js: 调用updatePages，位置=${location}`);
+
   // 调用原始函数
   window.updatePagesOriginal(location);
 
@@ -218,7 +220,9 @@ window.updatePages = function(location) {
   // 不再依赖window.currentBook
   const currentBookId = dataStore.getCurrentBook()?.id;
   if (currentBookId) {
+    // 保存位置索引
     dataStore.updateProgress(currentBookId, location);
+    console.log(`app-init.js: 更新阅读进度，书籍=${currentBookId}, 位置=${location}`);
   } else {
     console.warn('无法更新阅读进度：未找到当前书籍ID');
   }

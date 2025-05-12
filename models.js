@@ -531,6 +531,10 @@ const dataStore = {
     // 生成书籍ID
     const id = await this.generateBookId(file);
 
+    // 检查书籍是否已存在
+    const existingBook = this.data.books[id];
+    const existingProgress = existingBook ? existingBook.progress || 0 : 0;
+
     // 默认标题（如果元数据提取失败）
     let title = file.name.replace('.epub', '');
 
@@ -560,9 +564,14 @@ const dataStore = {
     this.data.books[id] = {
       title: title,
       path: path,
-      progress: 0,
+      // 如果书籍已存在，保留其进度；否则设为0
+      progress: existingProgress,
       lastRead: now.getTime()
     };
+
+    if (existingProgress > 0) {
+      console.log(`保留书籍 ${id} 的现有进度: ${existingProgress}`);
+    }
 
     this.debouncedSave();
     return id;
@@ -617,13 +626,22 @@ const dataStore = {
     if (bookInfo) {
       const now = validateDate(new Date(), '设置当前书籍');
       this.data.books[bookId].lastRead = now.getTime();
+
+      // 获取该书籍的进度
+      const progress = bookInfo.progress || 0;
+      console.log(`获取书籍 ${bookId} 的保存进度: ${progress}`);
+
+      this.debouncedSave();
+      console.log(`设置当前书籍: ${bookId}`);
+
+      // 返回书籍的进度，以便调用者使用
+      return progress;
     } else {
       console.log(`警告：设置当前书籍为 ${bookId}，但该书籍不存在于数据中`);
+      this.debouncedSave();
+      console.log(`设置当前书籍: ${bookId}`);
+      return 0; // 如果没有找到书籍，返回默认进度0
     }
-
-    this.debouncedSave();
-
-    console.log(`设置当前书籍: ${bookId}`);
   },
 
   // 获取当前书籍
@@ -752,8 +770,9 @@ const dataStore = {
       // 1. 添加书籍并获取ID
       const bookId = await this.addBook(file, path || `/${file.name}`);
 
-      // 2. 设置当前书籍
-      this.setCurrentBook(bookId);
+      // 2. 设置当前书籍并获取该书籍的进度
+      const bookProgress = this.setCurrentBook(bookId);
+      console.log(`加载书籍 ${bookId} 时获取到的进度: ${bookProgress}`);
 
       // 3. 加载笔记
       const notesTextarea = document.getElementById('notes');
@@ -763,6 +782,10 @@ const dataStore = {
 
       // 4. 调用原始的处理函数
       window.handleFileInternal(file);
+
+      // 5. 保存书籍的进度，以便在handleFileInternal完成后使用
+      // 注意：这个进度会在位置信息生成后由updatePages函数使用
+      window._pendingBookProgress = bookProgress;
 
       console.log(`书籍加载并显示完成: ID=${bookId}, 标题=${file.name.replace('.epub', '')}`);
 

@@ -2443,6 +2443,7 @@
       let currentNotes = {};
       let currentLocation = 0; // 当前位置
       let totalLocations = 0;  // 总位置数
+      let currentCfi = null;   // 当前CFI，用于精确定位
 
       // 更新页面显示 - 全局函数
       function updatePages(startLocation) {
@@ -2450,30 +2451,65 @@
         if (startLocation < 0) startLocation = 0;
         if (startLocation >= totalLocations) startLocation = totalLocations - 1;
 
+        // 获取当前书籍ID
+        const currentBookId = dataStore.getCurrentBookId();
+
+        console.log(`更新页面显示: 位置=${startLocation}/${totalLocations-1}`);
+
         // 更新当前位置
         currentLocation = startLocation;
 
-        // 使用位置索引（转换为CFI）
-        const cfi = book.locations.cfiFromLocation(startLocation);
+        // 尝试获取保存的CFI
+        const savedCfi = localStorage.getItem(`${currentBookId}-cfi`);
+
+        // 决定使用哪种方式定位
+        let displayPromise;
+
+        if (savedCfi) {
+          console.log(`使用保存的CFI定位: ${savedCfi}`);
+          // 使用保存的CFI定位，这更精确
+          currentCfi = savedCfi;
+          displayPromise = rendition.display(savedCfi);
+        } else {
+          console.log(`使用位置索引定位: ${startLocation}`);
+          // 使用位置索引（转换为CFI）
+          const cfi = book.locations.cfiFromLocation(startLocation);
+          currentCfi = cfi;
+          displayPromise = rendition.display(cfi);
+        }
 
         // 显示页面
-        rendition.display(cfi).then(() => {
+        displayPromise.then(() => {
           // 更新进度显示
           updateProgressInfo();
 
           // 保存阅读进度到本地，但不保存到Dropbox（避免初始加载时频繁保存）
-          const currentBookId = dataStore.getCurrentBookId();
           if (currentBookId) {
-            // 只保存到本地存储，不触发保存到Dropbox
+            // 保存位置索引
             localStorage.setItem(`${currentBookId}-progress`, currentLocation.toString());
+
+            // 保存CFI
+            if (currentCfi) {
+              localStorage.setItem(`${currentBookId}-cfi`, currentCfi);
+            }
 
             // 更新dataStore中的进度，但不立即保存
             if (dataStore && dataStore.data && dataStore.data.books && dataStore.data.books[currentBookId]) {
               dataStore.data.books[currentBookId].progress = currentLocation;
+              // 注意：我们不在dataStore中保存CFI，因为它可能会很长，而且是为了兼容性
             }
           }
         }).catch(error => {
           console.error('页面显示错误:', error);
+
+          // 如果使用CFI失败，尝试使用位置索引
+          if (savedCfi && !useLocationDirectly) {
+            console.log('使用CFI定位失败，尝试使用位置索引');
+            const cfi = book.locations.cfiFromLocation(startLocation);
+            rendition.display(cfi).catch(err => {
+              console.error('使用位置索引定位也失败:', err);
+            });
+          }
         });
       }
 
@@ -2488,8 +2524,8 @@
           // 构建进度信息
           let progressInfo = `${percentage}%`;
 
-          // 添加位置信息
-          progressInfo += ` | 位置: ${currentLocation+1}/${totalLocations}`;
+          // 添加位置信息 - 不再加1，直接使用原始位置索引
+          progressInfo += ` | 位置: ${currentLocation}/${totalLocations-1}`;
 
           // 尝试获取当前章节信息
           try {
@@ -2530,8 +2566,8 @@
           // 更新右下角页码显示
           const pageCounterElement = document.getElementById('page-counter');
           if (pageCounterElement) {
-            // 简洁显示：当前页/总页数
-            pageCounterElement.textContent = `${currentLocation+1}/${totalLocations}`;
+            // 简洁显示：当前页/总页数 - 不再加1，直接使用原始位置索引
+            pageCounterElement.textContent = `${currentLocation}/${totalLocations-1}`;
 
             // 确保页码元素有点击事件，用于显示目录
             if (!pageCounterElement.hasAttribute('data-toc-initialized')) {
@@ -2836,23 +2872,43 @@
         const newWidth = container.clientWidth;
         const newHeight = container.clientHeight;
 
+        console.log(`重新渲染电子书: 新尺寸=${newWidth}x${newHeight}`);
+
         // 调整渲染器尺寸
         rendition.resize(newWidth, newHeight);
 
         // 使用当前位置重新渲染
         try {
+          // 优先使用保存的CFI（最精确）
+          if (currentCfi) {
+            console.log(`使用保存的CFI重新渲染: ${currentCfi}`);
+            rendition.display(currentCfi);
+            return;
+          }
+
+          // 其次使用当前渲染器位置的CFI
           const location = rendition.location;
           if (location && location.start) {
+            console.log(`使用当前位置CFI重新渲染: ${location.start.cfi}`);
             rendition.display(location.start.cfi);
-          } else {
-            // 如果无法获取当前位置，使用保存的位置
-            const cfi = book.locations.cfiFromLocation(currentLocation);
-            rendition.display(cfi);
+            return;
           }
-        } catch (error) {
-          // 使用保存的位置
+
+          // 最后使用位置索引
+          console.log(`使用位置索引重新渲染: ${currentLocation}`);
           const cfi = book.locations.cfiFromLocation(currentLocation);
           rendition.display(cfi);
+        } catch (error) {
+          console.error('重新渲染时出错:', error);
+
+          // 出错时使用位置索引作为后备方案
+          try {
+            console.log(`重新渲染出错，使用位置索引作为后备: ${currentLocation}`);
+            const cfi = book.locations.cfiFromLocation(currentLocation);
+            rendition.display(cfi);
+          } catch (backupError) {
+            console.error('使用后备方案重新渲染也失败:', backupError);
+          }
         }
       }
 
@@ -3081,9 +3137,24 @@
 
                   // 从 dataStore 获取保存的阅读进度
                   let startLocation = 0;
-                  if (currentBookId && dataStore.data.books[currentBookId]) {
+
+                  // 首先检查是否有通过 window._pendingBookProgress 传递的进度
+                  if (typeof window._pendingBookProgress === 'number' && window._pendingBookProgress > 0) {
+                    startLocation = window._pendingBookProgress;
+                    console.log('使用预先保存的书籍进度:', startLocation);
+                    // 使用后清除，避免影响下次加载
+                    window._pendingBookProgress = undefined;
+                  }
+                  // 如果没有预先保存的进度，从数据存储中获取
+                  else if (currentBookId && dataStore.data.books[currentBookId]) {
                     startLocation = dataStore.data.books[currentBookId].progress || 0;
                     console.log('从数据存储中获取的阅读进度:', startLocation);
+                  }
+
+                  // 确保进度在有效范围内
+                  if (startLocation >= totalLocations) {
+                    console.log(`进度超出范围 (${startLocation} >= ${totalLocations})，重置为0`);
+                    startLocation = 0;
                   }
 
                   // 初始化显示
@@ -3168,10 +3239,13 @@
                       const locationCfi = location.start.cfi;
                       const newLocation = book.locations.locationFromCfi(locationCfi);
 
-                      console.log(`位置变化: ${currentLocation} -> ${newLocation}`);
+                      console.log(`位置变化: ${currentLocation} -> ${newLocation}, CFI: ${locationCfi}`);
 
                       if (newLocation !== currentLocation) {
                         currentLocation = newLocation;
+
+                        // 保存当前CFI，用于更精确的位置恢复
+                        currentCfi = locationCfi;
 
                         // 更新进度显示
                         window.updateProgressInfo();
@@ -3362,14 +3436,22 @@
             // 更新当前位置
             currentLocation = newLocation;
 
+            // 更新当前CFI
+            currentCfi = locationCfi;
+
+            console.log(`更新阅读位置: 位置=${newLocation}, CFI=${locationCfi}`);
+
             // 更新进度显示
             window.updateProgressInfo();
 
             // 保存阅读进度，使用防抖保存
             const currentBookId = dataStore.getCurrentBookId();
             if (currentBookId && dataStore) {
-              // 使用新的数据存储服务更新进度，不立即保存
+              // 保存位置索引到数据存储
               dataStore.updateProgress(currentBookId, currentLocation, false);
+
+              // 保存CFI到本地存储（不保存到dataStore，因为CFI可能很长）
+              localStorage.setItem(`${currentBookId}-cfi`, locationCfi);
             }
           }
         } catch (e) {
