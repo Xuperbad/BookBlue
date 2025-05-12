@@ -3139,12 +3139,7 @@
           // 导航成功后更新当前位置
           setTimeout(updateReadingPosition, 100);
 
-          // 记录阅读活动
-          const currentBookId = dataStore.getCurrentBookId();
-          if (currentBookId && dataStore) {
-            dataStore.recordReading(currentBookId, 1);
-            console.log('记录阅读活动 - 向前翻页');
-          }
+          // 注意：阅读记录逻辑已移至app-init.js，避免重复记录
         }).catch(function() {
           // 已经是第一页
         });
@@ -3159,22 +3154,7 @@
           // 导航成功后更新当前位置
           setTimeout(updateReadingPosition, 100);
 
-          // 记录阅读活动
-          const currentBookId = dataStore.getCurrentBookId();
-          if (currentBookId && dataStore) {
-            dataStore.recordReading(currentBookId, 1);
-            console.log('记录阅读活动 - 向后翻页');
-
-            // 检查是否到达书籍末尾
-            if (book.locations && book.locations.total && currentLocation) {
-              if (currentLocation > book.locations.total * 0.95) {
-                const dialog = document.getElementById('finish-dialog');
-                if (dialog) {
-                  dialog.style.display = 'block';
-                }
-              }
-            }
-          }
+          // 注意：阅读记录和书籍末尾检查逻辑已移至app-init.js，避免重复记录
         }).catch(function() {
           // 已经是最后一页
         });

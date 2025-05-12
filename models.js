@@ -12,6 +12,34 @@ function validateDate(date, context = '') {
   return date;
 }
 
+// 格式化时间为更友好的显示格式（使用中文）
+function formatReadingTime(minutes) {
+  // 如果分钟数为0，返回0秒
+  if (minutes === 0) return '0秒';
+
+  // 将分钟转换为秒
+  const totalSeconds = Math.round(minutes * 60);
+
+  // 计算小时、分钟和秒
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  // 构建显示字符串
+  let result = '';
+  if (hours > 0) {
+    result += `${hours}时`;
+  }
+  if (mins > 0 || hours > 0) {
+    result += `${mins}分`;
+  }
+  if (secs > 0) {
+    result += `${secs}秒`;
+  }
+
+  return result;
+}
+
 // 获取IndexedDB数据库的通用函数
 async function getDatabase(dbName = 'BookBlueCache', version = 2, storeNames = ['books', 'covers']) {
   return new Promise((resolve, reject) => {
@@ -209,15 +237,16 @@ const dataStore = {
         readingDaysElement.textContent = `${days}天`;
       }
 
-      // 更新阅读小时数
+      // 更新阅读时长
       const readingHoursElement = document.getElementById('reading-hours');
       if (readingHoursElement) {
         let totalMinutes = 0;
         Object.values(this.data.readingStats.minutes).forEach(day => {
           totalMinutes += day.total || 0;
         });
-        const hours = Math.floor(totalMinutes / 60);
-        readingHoursElement.textContent = `${hours}小时`;
+        // 使用新的格式化函数格式化总阅读时间
+        const formattedTime = formatReadingTime(totalMinutes);
+        readingHoursElement.textContent = formattedTime;
       }
 
       // 更新已读完书籍数
@@ -288,8 +317,11 @@ const dataStore = {
         else level = 4;
       }
 
+      // 格式化阅读时间
+      const formattedTime = formatReadingTime(minutes);
+
       dayElement.setAttribute('data-level', level);
-      dayElement.setAttribute('title', `${dateString}: ${minutes}分钟`);
+      dayElement.setAttribute('title', `${dateString}: ${formattedTime}`);
 
       // 如果是今天，添加特殊样式
       if (day === now.getDate()) {
@@ -338,15 +370,8 @@ const dataStore = {
       const bookTime = document.createElement('div');
       bookTime.className = 'frequent-book-time';
 
-      // 格式化时间
-      let timeText = '';
-      if (minutes >= 60) {
-        const hours = Math.floor(minutes / 60);
-        const remainingMinutes = minutes % 60;
-        timeText = `${hours}小时${remainingMinutes > 0 ? remainingMinutes + '分钟' : ''}`;
-      } else {
-        timeText = `${minutes}分钟`;
-      }
+      // 使用新的格式化函数格式化时间
+      const timeText = formatReadingTime(minutes);
 
       bookTime.textContent = timeText;
 
@@ -631,9 +656,15 @@ const dataStore = {
     }
   },
 
-  // 记录阅读活动
+  /**
+   * 记录阅读活动
+   * 此函数用于记录用户的阅读时间，按日期和书籍ID进行统计
+   *
+   * @param {string} id - 书籍ID或路径
+   * @param {number} minutes - 要记录的分钟数，通常为1（每次翻页记录1分钟）
+   */
   recordReading(id, minutes) {
-    // 查找书籍
+    // 查找书籍（支持通过ID、路径或文件名查找）
     const { bookId, bookInfo } = this.findBook(id);
 
     // 如果没有找到，记录错误并返回
@@ -642,11 +673,11 @@ const dataStore = {
       return;
     }
 
-    // 获取今天的日期并验证
+    // 获取今天的日期并验证（确保日期年份在合理范围内）
     const now = validateDate(new Date(), '记录阅读');
-    const today = now.toISOString().split('T')[0];
+    const today = now.toISOString().split('T')[0]; // 格式化为YYYY-MM-DD
 
-    // 确保该日期的数据存在
+    // 确保该日期的数据结构存在
     if (!this.data.readingStats.minutes[today]) {
       this.data.readingStats.minutes[today] = { total: 0, books: {} };
     }
@@ -660,10 +691,12 @@ const dataStore = {
     this.data.readingStats.minutes[today].books[bookId] += minutes;
     this.data.readingStats.minutes[today].total += minutes;
 
-    // 保存数据
+    console.log(`记录阅读时间: ${bookId}, ${minutes}分钟, 日期: ${today}`);
+
+    // 使用防抖函数延迟保存数据，避免频繁保存
     this.debouncedSave();
 
-    // 更新UI
+    // 更新UI显示（阅读天数、小时数、热力图等）
     this.updateReadingUI();
   },
 
